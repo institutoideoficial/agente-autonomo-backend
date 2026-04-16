@@ -1,0 +1,56 @@
+.github/workflows/deploy.ymlname: Setup VPS
+on:
+  workflow_dispatch:
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install on VPS
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: 147.93.39.48
+          username: root
+          password: ${{ secrets.VPS_PASSWORD }}
+          timeout: 600s
+          command_timeout: 600s
+          script: |
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update -y
+            apt-get install -y ca-certificates curl gnupg
+            install -m 0755 -d /etc/apt/keyrings
+            curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+            chmod a+r /etc/apt/keyrings/docker.gpg
+            echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" | tee /etc/apt/sources.list.d/docker.list
+            apt-get update -y
+            apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+            mkdir -p /opt/evolution && cd /opt/evolution
+            cat > docker-compose.yml << COMPEOF
+            version: '3.8'
+            services:
+              evolution-api:
+                image: atendai/evolution-api:latest
+                container_name: evolution_api
+                restart: always
+                ports:
+                  - "8080:8080"
+                environment:
+                  - SERVER_URL=http://147.93.39.48:8080
+                  - AUTHENTICATION_TYPE=apikey
+                  - AUTHENTICATION_API_KEY=agentecreator123
+                  - AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES=true
+                  - QRCODE_LIMIT=30
+                  - DEL_INSTANCE=false
+                  - DATABASE_ENABLED=false
+                  - REDIS_ENABLED=false
+                  - LOG_LEVEL=ERROR
+                volumes:
+                  - evolution_store:/evolution/store
+                  - evolution_instances:/evolution/instances
+            volumes:
+              evolution_store:
+              evolution_instances:
+            COMPEOF
+            docker compose up -d
+            sleep 20
+            curl -s http://localhost:8080
+            echo "INSTALADO"
