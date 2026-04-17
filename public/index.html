@@ -69,21 +69,27 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;backgrou
 #es .el{font-size:88px;opacity:.1}
 #es h3{font-size:24px;color:#e9edef;font-weight:300}
 #es p{font-size:14px;text-align:center;max-width:300px;line-height:1.7}
-#qo{position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:999;display:none;align-items:center;justify-content:center}
-#qb{background:#202c33;border-radius:14px;padding:30px;width:340px;text-align:center}
+#qo{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:999;display:none;align-items:center;justify-content:center}
+#qb{background:#202c33;border-radius:14px;padding:30px;width:360px;text-align:center}
 #qb h3{font-size:19px;font-weight:600;margin-bottom:6px;color:#e9edef}
-#qb p{color:#8696a0;font-size:13px;margin-bottom:22px;line-height:1.6}
-#qf{width:250px;height:250px;background:#fff;border-radius:10px;margin:0 auto;display:flex;align-items:center;justify-content:center;overflow:hidden}
-#qf img{width:100%;height:100%;object-fit:contain}
-#qst{margin-top:14px;font-size:13px;color:#8696a0;min-height:20px}
-.qa{display:flex;gap:8px;margin-top:20px;justify-content:flex-end}
+#qb p{color:#8696a0;font-size:13px;margin-bottom:20px;line-height:1.6}
+.ph-wrap{display:flex;gap:8px;margin-bottom:14px}
+.ph-wrap input{flex:1;background:#2a3942;border:1px solid #3a4a52;border-radius:8px;padding:12px 14px;color:#e9edef;font-size:15px;outline:none}
+.ph-wrap input:focus{border-color:#00a884}
+.ph-wrap input::placeholder{color:#8696a0}
+.btn-pc{background:#00a884;color:#fff;border:none;padding:12px 18px;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600;white-space:nowrap}
+.btn-pc:hover{background:#06cf9c;color:#111}
+.btn-pc:disabled{background:#2a3942;cursor:not-allowed}
+.code-box{background:#111b21;border-radius:10px;padding:20px;margin:16px 0;display:none}
+.code-box p{color:#8696a0;font-size:12px;margin-bottom:10px}
+.code-display{font-size:32px;font-weight:700;color:#00a884;letter-spacing:6px;font-family:monospace}
+.code-steps{text-align:left;background:#2a3942;border-radius:8px;padding:12px 16px;margin-top:14px}
+.code-steps p{font-size:12px;font-weight:600;color:#e9edef;margin-bottom:6px}
+.code-steps ol{font-size:12px;color:#aebac1;padding-left:16px;line-height:1.9}
+#qst{margin-top:12px;font-size:13px;color:#8696a0;min-height:18px}
+.qa{display:flex;gap:8px;margin-top:18px;justify-content:flex-end}
 .qc{background:#2a3942;color:#e9edef;border:none;padding:9px 18px;border-radius:8px;cursor:pointer;font-size:13px}
 .qc:hover{background:#374248}
-.qg{background:#00a884;color:#fff;border:none;padding:9px 18px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600}
-.qg:hover{background:#06cf9c;color:#111}
-.steps{margin-top:18px;text-align:left;background:#2a3942;border-radius:8px;padding:12px 16px}
-.steps p{font-size:12px;font-weight:600;color:#e9edef;margin-bottom:6px}
-.steps ol{font-size:12px;color:#aebac1;padding-left:16px;line-height:1.9}
 </style>
 </head>
 <body>
@@ -103,7 +109,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;backgrou
   </div>
   <div id="cbar" onclick="abrirQR()">
     <div class="cba">&#128241;</div>
-    <div class="cbt"><div class="t1">Conectar WhatsApp</div><div class="t2">Clique para escanear o QR Code</div></div>
+    <div class="cbt"><div class="t1">Conectar WhatsApp</div><div class="t2" id="cbar-sub">Digite seu numero para conectar</div></div>
     <div id="wst">Desconectado</div>
   </div>
   <div id="cl"></div>
@@ -117,14 +123,29 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;backgrou
 </div>
 <div id="qo">
   <div id="qb">
-    <h3>Conectar ao WhatsApp</h3>
-    <p>Use o WhatsApp no celular para escanear o QR Code</p>
-    <div id="qf"><div id="qpl" style="color:#aaa;font-size:13px;padding:20px">Clique em Gerar QR</div></div>
+    <h3>Conectar WhatsApp</h3>
+    <p>Digite seu numero com DDI para receber um codigo de 8 digitos no WhatsApp</p>
+    <div class="ph-wrap">
+      <input type="tel" id="phone-inp" placeholder="5511999999999" maxlength="15">
+      <button class="btn-pc" id="btn-pair" onclick="gerarPairingCode()">Conectar</button>
+    </div>
+    <div class="code-box" id="code-box">
+      <p>Digite este codigo no WhatsApp:</p>
+      <div class="code-display" id="code-display">--------</div>
+    </div>
+    <div class="code-steps" id="code-steps" style="display:none">
+      <p>Como usar o codigo:</p>
+      <ol>
+        <li>Abra o WhatsApp no celular</li>
+        <li>Toque em Mais opcoes ou Configuracoes</li>
+        <li>Toque em Dispositivos conectados</li>
+        <li>Toque em Conectar com numero de telefone</li>
+        <li>Digite o codigo acima</li>
+      </ol>
+    </div>
     <div id="qst"></div>
-    <div class="steps"><p>Como conectar:</p><ol><li>Abra o WhatsApp no celular</li><li>Toque em Dispositivos conectados</li><li>Toque em Conectar um dispositivo</li><li>Aponte a camera para este QR Code</li></ol></div>
     <div class="qa">
-      <button class="qc" onclick="fecharQR()">Cancelar</button>
-      <button class="qg" onclick="gerarQR()">&#128247; Gerar QR Code</button>
+      <button class="qc" onclick="fecharQR()">Fechar</button>
     </div>
   </div>
 </div>
@@ -134,7 +155,6 @@ var CL=['#1d3557','#2d6a4f','#6a0572','#3a86ff','#c77dff','#e07b39','#2a9d8f','#
 function h(){return new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});}
 function av(n){return n.split(' ').map(function(w){return w[0]||'';}).join('').substring(0,2).toUpperCase();}
 function cr(n){return CL[n.charCodeAt(0)%CL.length];}
-function pc(el){var r=el.getBoundingClientRect(),x=r.left+r.width/2,y=r.top+r.height/2;['pointerdown','mousedown','mouseup','click','pointerup'].forEach(function(ev){el.dispatchEvent(new (ev.startsWith('pointer')?PointerEvent:MouseEvent)(ev,{bubbles:true,cancelable:true,clientX:x,clientY:y,view:window}));});}
 function addC(id,nm,pv,ts,bd){
   if(document.getElementById('c-'+id))return;
   var d=document.createElement('div');
@@ -222,30 +242,53 @@ function filtrar(q){
   });
 }
 function abrirQR(){document.getElementById('qo').style.display='flex';}
-function fecharQR(){document.getElementById('qo').style.display='none';if(qi){clearInterval(qi);qi=null;}}
-function gerarQR(){
+function fecharQR(){
+  document.getElementById('qo').style.display='none';
+  if(qi){clearInterval(qi);qi=null;}
+  document.getElementById('code-box').style.display='none';
+  document.getElementById('code-steps').style.display='none';
+  document.getElementById('qst').textContent='';
+  document.getElementById('btn-pair').disabled=false;
+  document.getElementById('btn-pair').textContent='Conectar';
+}
+function gerarPairingCode(){
+  var phone=document.getElementById('phone-inp').value.replace(/D/g,'');
+  if(phone.length < 10){document.getElementById('qst').textContent='Digite um numero valido com DDI (ex: 5511999999999)';return;}
+  document.getElementById('btn-pair').disabled=true;
+  document.getElementById('btn-pair').textContent='Aguarde...';
   document.getElementById('qst').textContent='Criando instancia...';
-  document.getElementById('qf').innerHTML='<div style="color:#aaa;font-size:13px;padding:20px">Aguardando QR Code...</div>';
-  fetch('/instancia/criar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nome:'agente1'})})
+  fetch('/pairing-code',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone:phone})})
     .then(function(r){return r.json();})
     .then(function(d){
-      if(d.ok){document.getElementById('qst').textContent='Aguardando QR Code...';if(qi)clearInterval(qi);qi=setInterval(pollQR,2000);}
-      else document.getElementById('qst').textContent='Erro: '+(d.error||'?');
-    }).catch(function(e){document.getElementById('qst').textContent='Erro: '+e.message;});
+      if(d.code){
+        document.getElementById('code-box').style.display='block';
+        document.getElementById('code-display').textContent=d.code;
+        document.getElementById('code-steps').style.display='block';
+        document.getElementById('qst').textContent='Codigo valido por alguns minutos. Use rapidamente!';
+        document.getElementById('btn-pair').textContent='Novo codigo';
+        document.getElementById('btn-pair').disabled=false;
+        if(qi)clearInterval(qi);
+        qi=setInterval(verificarConexao,3000);
+      } else {
+        document.getElementById('qst').textContent='Erro: '+(d.error||'Tente novamente');
+        document.getElementById('btn-pair').disabled=false;
+        document.getElementById('btn-pair').textContent='Conectar';
+      }
+    }).catch(function(e){
+      document.getElementById('qst').textContent='Erro: '+e.message;
+      document.getElementById('btn-pair').disabled=false;
+      document.getElementById('btn-pair').textContent='Conectar';
+    });
 }
-function pollQR(){
+function verificarConexao(){
   fetch('/qr/agente1').then(function(r){return r.json();}).then(function(d){
     if(d.status==='connected'){
       clearInterval(qi);qi=null;fecharQR();
       document.getElementById('wst').textContent='Conectado';
       document.getElementById('wst').className='on';
-      document.querySelector('.cbt .t1').textContent='WhatsApp Conectado';
-      document.querySelector('.cbt .t2').textContent='Agente respondendo automaticamente';
       document.getElementById('cbar').style.background='#1d4e3a';
-    } else if(d.base64){
-      var src=d.base64.startsWith('data:')?d.base64:'data:image/png;base64,'+d.base64;
-      document.getElementById('qf').innerHTML='<img src="'+src+'" alt="QR Code">';
-      document.getElementById('qst').textContent='Escaneie agora com seu WhatsApp!';
+      document.querySelector('.cbt .t1').textContent='WhatsApp Conectado';
+      document.getElementById('cbar-sub').textContent='Agente respondendo automaticamente';
     }
   }).catch(function(){});
 }
@@ -264,4 +307,4 @@ demos.forEach(function(d,i){
 sel('d1','Maria Silva');
 </script>
 </body>
-</html>
+        </html>
