@@ -5,306 +5,927 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Agente Creator</title>
 <style>
-*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#111b21;color:#e9edef;height:100vh;display:flex;overflow:hidden}
-#sb{width:410px;min-width:410px;background:#111b21;border-right:1px solid #2a3942;display:flex;flex-direction:column}
-.sh{background:#202c33;padding:10px 16px;display:flex;align-items:center;justify-content:space-between;height:60px}
-.sh h2{font-size:18px;font-weight:600;color:#e9edef}
-.ic{background:none;border:none;color:#aebac1;cursor:pointer;padding:8px;border-radius:50%;font-size:20px;line-height:1;display:flex;align-items:center;justify-content:center}
-.ic:hover{background:#2a3942}
-.sr{padding:8px 12px}
-.si{background:#202c33;border-radius:8px;display:flex;align-items:center;gap:9px;padding:8px 12px}
-.si input{background:none;border:none;outline:none;color:#e9edef;font-size:15px;width:100%}
-.si input::placeholder{color:#8696a0}
-#cbar{padding:10px 14px;background:#005c4b;display:flex;align-items:center;gap:10px;cursor:pointer}
-#cbar:hover{background:#017561}
-.cba{width:42px;height:42px;border-radius:50%;background:#00a884;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
-.cbt{flex:1}.cbt .t1{font-size:14px;font-weight:500;color:#e9edef}.cbt .t2{font-size:12px;color:#b2dfdb;margin-top:2px}
-#wst{font-size:11px;padding:2px 8px;border-radius:10px;background:#2a3942;color:#8696a0;white-space:nowrap}
-#wst.on{background:#063d29;color:#00a884}
-#cl{flex:1;overflow-y:auto}
-#cl::-webkit-scrollbar{width:5px}
-#cl::-webkit-scrollbar-thumb{background:#2a3942;border-radius:3px}
-.cv{display:flex;align-items:center;padding:10px 16px;cursor:pointer;border-bottom:1px solid #1f2c34;gap:12px;min-height:72px;transition:background .15s}
-.cv:hover,.cv.active{background:#2a3942}
-.av{width:49px;height:49px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;flex-shrink:0;color:#fff}
-.cb{flex:1;min-width:0}
-.r1{display:flex;justify-content:space-between;align-items:center;margin-bottom:3px}
-.nm{font-size:16px;color:#e9edef;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;max-width:230px}
-.ts{font-size:12px;color:#8696a0;flex-shrink:0;margin-left:6px}
-.r2{display:flex;justify-content:space-between;align-items:center;gap:6px}
-.pv{font-size:13px;color:#8696a0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1}
-.bd{background:#00a884;color:#111b21;border-radius:50%;min-width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;padding:0 4px;flex-shrink:0}
-#main{flex:1;display:flex;flex-direction:column;background:#0b141a;min-width:0}
-.mh{background:#202c33;padding:10px 16px;display:flex;align-items:center;gap:12px;height:60px;flex-shrink:0}
-.mhav{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:#fff;flex-shrink:0}
-.mi{flex:1;min-width:0}
-#mn{font-size:16px;font-weight:600;color:#e9edef}
-#ms{font-size:13px;color:#8696a0;margin-top:1px}
-#bg{flex:1;overflow-y:auto;padding:12px 7%}
-#bg::-webkit-scrollbar{width:5px}
-#bg::-webkit-scrollbar-thumb{background:#2a3942;border-radius:3px}
-.dv{text-align:center;margin:14px 0}
-.dv span{background:#182229;color:#8696a0;font-size:12px;padding:5px 12px;border-radius:8px}
-.mw{display:flex;margin-bottom:3px}
-.mw.o{justify-content:flex-end}
-.bl{max-width:65%;padding:7px 12px 6px;border-radius:8px;font-size:14.2px;line-height:1.45;word-break:break-word}
-.bl.o{background:#005c4b;border-top-right-radius:2px}
-.bl.i{background:#202c33;border-top-left-radius:2px}
-.bt{display:flex;align-items:center;justify-content:flex-end;gap:3px;margin-top:3px}
-.bts{font-size:11px;color:rgba(233,237,239,.55)}
-.btk{font-size:14px;color:#53bdeb}
-.tyd{display:flex;gap:4px;padding:5px 2px}
-.tyd span{width:7px;height:7px;background:#8696a0;border-radius:50%;animation:bounce 1.2s infinite}
-.tyd span:nth-child(2){animation-delay:.2s}
-.tyd span:nth-child(3){animation-delay:.4s}
-@keyframes bounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-8px)}}
-.ft{background:#202c33;padding:8px 14px;display:flex;align-items:flex-end;gap:8px;flex-shrink:0;min-height:62px}
-#fi{flex:1;background:#2a3942;border:none;border-radius:9px;padding:10px 14px;color:#e9edef;font-size:14px;outline:none;resize:none;font-family:inherit;max-height:130px;min-height:42px;line-height:1.5}
-#fi::placeholder{color:#8696a0}
-#fs{background:#00a884;border:none;border-radius:50%;width:50px;height:50px;cursor:pointer;color:#fff;font-size:22px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
-#fs:hover{background:#06cf9c}
-#fs:disabled{background:#2a3942;cursor:not-allowed}
-#es{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;color:#8696a0}
-#es .el{font-size:88px;opacity:.1}
-#es h3{font-size:24px;color:#e9edef;font-weight:300}
-#es p{font-size:14px;text-align:center;max-width:300px;line-height:1.7}
-#qo{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:999;display:none;align-items:center;justify-content:center}
-#qb{background:#202c33;border-radius:14px;padding:30px;width:360px;text-align:center}
-#qb h3{font-size:19px;font-weight:600;margin-bottom:6px;color:#e9edef}
-#qb p{color:#8696a0;font-size:13px;margin-bottom:20px;line-height:1.6}
-.ph-wrap{display:flex;gap:8px;margin-bottom:14px}
-.ph-wrap input{flex:1;background:#2a3942;border:1px solid #3a4a52;border-radius:8px;padding:12px 14px;color:#e9edef;font-size:15px;outline:none}
-.ph-wrap input:focus{border-color:#00a884}
-.ph-wrap input::placeholder{color:#8696a0}
-.btn-pc{background:#00a884;color:#fff;border:none;padding:12px 18px;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600;white-space:nowrap}
-.btn-pc:hover{background:#06cf9c;color:#111}
-.btn-pc:disabled{background:#2a3942;cursor:not-allowed}
-.code-box{background:#111b21;border-radius:10px;padding:20px;margin:16px 0;display:none}
-.code-box p{color:#8696a0;font-size:12px;margin-bottom:10px}
-.code-display{font-size:32px;font-weight:700;color:#00a884;letter-spacing:6px;font-family:monospace}
-.code-steps{text-align:left;background:#2a3942;border-radius:8px;padding:12px 16px;margin-top:14px}
-.code-steps p{font-size:12px;font-weight:600;color:#e9edef;margin-bottom:6px}
-.code-steps ol{font-size:12px;color:#aebac1;padding-left:16px;line-height:1.9}
-#qst{margin-top:12px;font-size:13px;color:#8696a0;min-height:18px}
-.qa{display:flex;gap:8px;margin-top:18px;justify-content:flex-end}
-.qc{background:#2a3942;color:#e9edef;border:none;padding:9px 18px;border-radius:8px;cursor:pointer;font-size:13px}
-.qc:hover{background:#374248}
+*{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+:root{--bg:#0f1923;--sb:#111b21;--sb2:#182026;--panel:#202c33;--panel2:#2a3942;--border:#2a3942;--green:#00a884;--green2:#005c4b;--green3:#1d4e3a;--text:#e9edef;--text2:#8696a0;--blue:#53bdeb;--red:#ef4444;--yellow:#f59e0b;--purple:#8b5cf6}
+body{background:var(--bg);color:var(--text);height:100vh;display:flex;overflow:hidden}
+
+/* NAV ESQUERDA */
+#nav{width:60px;background:#1a1f2e;display:flex;flex-direction:column;align-items:center;padding:10px 0;gap:2px;border-right:1px solid #0d1117;flex-shrink:0}
+.nav-btn{width:44px;height:44px;border-radius:10px;background:none;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:20px;color:var(--text2);transition:all .2s;position:relative}
+.nav-btn:hover,.nav-btn.active{background:var(--panel);color:var(--text)}
+.nav-btn .badge{position:absolute;top:6px;right:6px;background:var(--green);color:#111;font-size:9px;font-weight:700;border-radius:10px;padding:1px 4px;min-width:14px;text-align:center}
+#nav-logo{font-size:24px;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+
+/* SIDEBAR */
+#sb{width:340px;min-width:340px;background:var(--sb);display:flex;flex-direction:column;border-right:1px solid var(--border)}
+.sb-header{background:var(--panel);padding:12px 14px;display:flex;align-items:center;justify-content:space-between;height:58px;flex-shrink:0}
+.sb-header h2{font-size:17px;font-weight:600}
+.sb-actions{display:flex;gap:2px}
+.ic{background:none;border:none;color:var(--text2);cursor:pointer;padding:7px;border-radius:50%;font-size:18px;display:flex;align-items:center;justify-content:center;transition:background .2s}
+.ic:hover{background:var(--panel2)}
+
+/* TABS */
+.sb-tabs{display:flex;background:var(--panel);border-bottom:1px solid var(--border);flex-shrink:0}
+.sb-tab{flex:1;padding:10px;text-align:center;font-size:12px;font-weight:600;color:var(--text2);cursor:pointer;border-bottom:2px solid transparent;transition:all .2s}
+.sb-tab.active{color:var(--green);border-bottom-color:var(--green)}
+
+/* FILTROS */
+.sb-filters{padding:8px 10px;background:var(--sb2);display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap}
+.filter-btn{padding:4px 10px;border-radius:12px;border:1px solid var(--border);background:none;color:var(--text2);font-size:11px;cursor:pointer;transition:all .2s;white-space:nowrap}
+.filter-btn:hover,.filter-btn.active{background:var(--green);border-color:var(--green);color:#111;font-weight:600}
+
+/* BUSCA */
+.sb-search{padding:7px 10px;background:var(--sb2);flex-shrink:0}
+.search-inp{background:var(--panel);border-radius:8px;display:flex;align-items:center;gap:8px;padding:7px 12px}
+.search-inp input{background:none;border:none;outline:none;color:var(--text);font-size:13px;width:100%}
+.search-inp input::placeholder{color:var(--text2)}
+
+/* CONVERSAS */
+#conv-list{flex:1;overflow-y:auto}
+#conv-list::-webkit-scrollbar{width:4px}
+#conv-list::-webkit-scrollbar-thumb{background:var(--panel2);border-radius:2px}
+.conv-item{display:flex;align-items:center;padding:10px 14px;cursor:pointer;border-bottom:1px solid #1a2228;gap:11px;min-height:68px;transition:background .15s;position:relative}
+.conv-item:hover,.conv-item.active{background:var(--panel2)}
+.conv-av{width:48px;height:48px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:700;flex-shrink:0;color:#fff;position:relative}
+.conv-av .status-dot{position:absolute;bottom:1px;right:1px;width:12px;height:12px;border-radius:50%;border:2px solid var(--sb);background:var(--text2)}
+.conv-av .status-dot.online{background:var(--green)}
+.conv-av .status-dot.bot{background:var(--purple)}
+.conv-info{flex:1;min-width:0}
+.conv-r1{display:flex;justify-content:space-between;align-items:center;margin-bottom:3px}
+.conv-name{font-size:15px;color:var(--text);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;max-width:180px}
+.conv-time{font-size:11px;color:var(--text2);flex-shrink:0}
+.conv-r2{display:flex;justify-content:space-between;align-items:center;gap:6px}
+.conv-prev{font-size:12px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1}
+.conv-r3{display:flex;gap:4px;align-items:center}
+.conv-badge{background:var(--green);color:#111;border-radius:50%;min-width:18px;height:18px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0;padding:0 4px}
+.conv-badge.bot{background:var(--purple)}
+.conv-tag{font-size:9px;padding:2px 6px;border-radius:8px;font-weight:600;background:var(--panel2);color:var(--text2)}
+.conv-tag.venda{background:#1a3a1a;color:#4ade80}
+.conv-tag.suporte{background:#1e2d4a;color:#60a5fa}
+.conv-tag.urgente{background:#3a1a1a;color:#f87171}
+
+/* STATUS */
+.conv-status{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.conv-status.open{background:var(--green)}
+.conv-status.pending{background:var(--yellow)}
+.conv-status.resolved{background:var(--text2)}
+
+/* AREA PRINCIPAL */
+#main{flex:1;display:flex;flex-direction:column;background:#0b141a;min-width:0;position:relative}
+
+/* HEADER CHAT */
+.chat-header{background:var(--panel);padding:8px 16px;display:flex;align-items:center;gap:12px;height:58px;flex-shrink:0;border-bottom:1px solid var(--border)}
+.chat-hav{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:#fff;flex-shrink:0}
+.chat-hinfo{flex:1;min-width:0}
+.chat-hname{font-size:16px;font-weight:600}
+.chat-hsub{font-size:12px;color:var(--text2);margin-top:1px}
+.chat-hactions{display:flex;gap:2px}
+
+/* MENSAGENS */
+#msgs{flex:1;overflow-y:auto;padding:12px 6%}
+#msgs::-webkit-scrollbar{width:4px}
+#msgs::-webkit-scrollbar-thumb{background:var(--panel2);border-radius:2px}
+.date-div{text-align:center;margin:14px 0}
+.date-div span{background:#182229;color:var(--text2);font-size:11px;padding:4px 12px;border-radius:8px}
+.msg-wrap{display:flex;margin-bottom:3px;gap:8px}
+.msg-wrap.out{justify-content:flex-end}
+.msg-wrap.in .msg-av{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;flex-shrink:0;margin-top:2px}
+.msg-bubble{max-width:62%;padding:7px 12px 6px;border-radius:8px;font-size:13.5px;line-height:1.45;word-break:break-word}
+.msg-bubble.out{background:var(--green2);border-top-right-radius:2px}
+.msg-bubble.in{background:var(--panel);border-top-left-radius:2px}
+.msg-bubble.note{background:#2d2a00;border-left:3px solid var(--yellow)}
+.msg-meta{display:flex;align-items:center;justify-content:flex-end;gap:3px;margin-top:3px}
+.msg-time{font-size:10px;color:rgba(233,237,239,.5)}
+.msg-tick{font-size:13px;color:var(--blue)}
+.typing{display:flex;gap:4px;padding:5px 2px}
+.typing span{width:7px;height:7px;background:var(--text2);border-radius:50%;animation:bounce 1.2s infinite}
+.typing span:nth-child(2){animation-delay:.2s}
+.typing span:nth-child(3){animation-delay:.4s}
+@keyframes bounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-7px)}}
+
+/* FOOTER */
+.chat-footer{background:var(--panel);padding:8px 12px;display:flex;flex-direction:column;gap:6px;flex-shrink:0}
+.footer-actions{display:flex;gap:4px;align-items:center}
+.footer-btn{background:none;border:none;color:var(--text2);cursor:pointer;padding:6px 8px;border-radius:8px;font-size:15px;display:flex;align-items:center;gap:4px;font-size:13px;transition:background .2s}
+.footer-btn:hover{background:var(--panel2);color:var(--text)}
+.footer-inp-wrap{display:flex;align-items:flex-end;gap:8px}
+#msg-inp{flex:1;background:var(--panel2);border:none;border-radius:9px;padding:10px 14px;color:var(--text);font-size:13.5px;outline:none;resize:none;font-family:inherit;max-height:120px;min-height:40px;line-height:1.5}
+#msg-inp::placeholder{color:var(--text2)}
+#send-btn{background:var(--green);border:none;border-radius:50%;width:48px;height:48px;cursor:pointer;color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background .2s}
+#send-btn:hover{background:#06cf9c}
+#send-btn:disabled{background:var(--panel2);cursor:not-allowed}
+
+/* PAINEL DIREITO */
+#right{width:300px;min-width:300px;background:var(--sb);border-left:1px solid var(--border);display:flex;flex-direction:column;overflow-y:auto;flex-shrink:0}
+#right::-webkit-scrollbar{width:4px}
+#right::-webkit-scrollbar-thumb{background:var(--panel2);border-radius:2px}
+.rp-section{border-bottom:1px solid var(--border);padding:14px}
+.rp-title{font-size:11px;font-weight:700;color:var(--text2);letter-spacing:.5px;text-transform:uppercase;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center}
+.rp-title button{background:none;border:none;color:var(--green);cursor:pointer;font-size:12px}
+.contact-av{width:64px;height:64px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:700;color:#fff;margin:0 auto 10px}
+.contact-name{text-align:center;font-size:16px;font-weight:600;margin-bottom:4px}
+.contact-num{text-align:center;font-size:13px;color:var(--text2)}
+.contact-badges{display:flex;justify-content:center;gap:6px;margin-top:8px;flex-wrap:wrap}
+.status-pill{font-size:11px;padding:3px 10px;border-radius:10px;font-weight:600}
+.status-pill.open{background:#063d29;color:var(--green)}
+.status-pill.pending{background:#3a2e00;color:var(--yellow)}
+.status-pill.resolved{background:#2a3942;color:var(--text2)}
+.status-pill.bot{background:#2e1a4a;color:#c4b5fd}
+.info-row{display:flex;flex-direction:column;gap:2px;margin-bottom:10px}
+.info-label{font-size:11px;color:var(--text2)}
+.info-val{font-size:13px;color:var(--text)}
+.tag-list{display:flex;flex-wrap:wrap;gap:5px;margin-top:2px}
+.tag{font-size:11px;padding:3px 8px;border-radius:8px;display:flex;align-items:center;gap:4px;cursor:pointer}
+.tag.venda{background:#1a3a1a;color:#4ade80}
+.tag.suporte{background:#1e2d4a;color:#60a5fa}
+.tag.urgente{background:#3a1a1a;color:#f87171}
+.tag.lead{background:#2a1a3a;color:#c4b5fd}
+.tag.add-tag{background:var(--panel2);color:var(--text2)}
+.tag.add-tag:hover{background:var(--green);color:#111}
+.notes-inp{width:100%;background:var(--panel2);border:none;border-radius:8px;padding:8px 10px;color:var(--text);font-size:12px;outline:none;resize:none;font-family:inherit;min-height:70px}
+.notes-inp::placeholder{color:var(--text2)}
+.save-note-btn{margin-top:6px;width:100%;background:var(--green2);border:none;border-radius:8px;padding:7px;color:var(--green);font-size:12px;font-weight:600;cursor:pointer}
+.save-note-btn:hover{background:var(--green3)}
+.quick-reply-item{background:var(--panel2);border-radius:8px;padding:8px 10px;margin-bottom:6px;cursor:pointer;font-size:12px;transition:background .2s}
+.quick-reply-item:hover{background:var(--green2)}
+.quick-reply-item .qr-name{font-weight:600;font-size:11px;color:var(--text2);margin-bottom:2px}
+.quick-reply-item .qr-text{color:var(--text)}
+.assign-sel{width:100%;background:var(--panel2);border:1px solid var(--border);border-radius:8px;padding:8px 10px;color:var(--text);font-size:13px;outline:none;cursor:pointer}
+.action-btn{width:100%;padding:8px;border-radius:8px;border:none;cursor:pointer;font-size:13px;font-weight:600;margin-bottom:6px;transition:all .2s}
+.action-btn.resolve{background:var(--green2);color:var(--green)}
+.action-btn.resolve:hover{background:var(--green3)}
+.action-btn.transfer{background:var(--panel2);color:var(--text)}
+.action-btn.transfer:hover{background:var(--panel)}
+.action-btn.bot-toggle{background:#2e1a4a;color:#c4b5fd}
+.action-btn.bot-toggle:hover{background:#3d2460}
+
+/* MODALS */
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:999;display:none;align-items:center;justify-content:center}
+.modal-bg.open{display:flex}
+.modal{background:var(--panel);border-radius:14px;padding:28px;width:360px;max-height:85vh;overflow-y:auto}
+.modal h3{font-size:18px;font-weight:600;margin-bottom:6px}
+.modal p{color:var(--text2);font-size:13px;margin-bottom:18px;line-height:1.6}
+.modal-input{width:100%;background:var(--panel2);border:1px solid var(--border);border-radius:8px;padding:11px 14px;color:var(--text);font-size:14px;outline:none;margin-bottom:12px}
+.modal-input:focus{border-color:var(--green)}
+.modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:4px}
+.btn-cancel{background:var(--panel2);color:var(--text);border:none;padding:9px 18px;border-radius:8px;cursor:pointer;font-size:13px}
+.btn-ok{background:var(--green);color:#fff;border:none;padding:9px 18px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600}
+.btn-ok:hover{background:#06cf9c;color:#111}
+
+/* EMPTY STATE */
+#empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;color:var(--text2)}
+#empty .el{font-size:80px;opacity:.08}
+#empty h3{font-size:22px;color:var(--text);font-weight:300}
+#empty p{font-size:13px;text-align:center;max-width:260px;line-height:1.7}
+
+/* KANBAN VIEW */
+#kanban-view{flex:1;display:none;overflow-x:auto;padding:16px;gap:14px}
+.kb-col{min-width:240px;background:var(--panel);border-radius:10px;display:flex;flex-direction:column}
+.kb-header{padding:12px 14px;font-size:13px;font-weight:600;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border)}
+.kb-count{background:var(--panel2);border-radius:10px;padding:1px 8px;font-size:11px}
+.kb-cards{padding:8px;display:flex;flex-direction:column;gap:6px;flex:1;overflow-y:auto}
+.kb-card{background:var(--sb);border-radius:8px;padding:10px 12px;cursor:pointer;transition:background .15s}
+.kb-card:hover{background:var(--panel2)}
+.kb-card .kc-name{font-size:13px;font-weight:500;margin-bottom:4px}
+.kb-card .kc-prev{font-size:11px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kb-card .kc-time{font-size:10px;color:var(--text2);margin-top:4px}
+
+/* CONTATOS VIEW */
+#contacts-view{flex:1;display:none;overflow-y:auto;padding:14px}
+.contact-card{background:var(--panel);border-radius:10px;padding:14px;margin-bottom:8px;display:flex;align-items:center;gap:12px;cursor:pointer;transition:background .15s}
+.contact-card:hover{background:var(--panel2)}
+.cc-av{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;color:#fff;flex-shrink:0}
+.cc-info{flex:1}
+.cc-name{font-size:14px;font-weight:600}
+.cc-num{font-size:12px;color:var(--text2);margin-top:2px}
+.cc-tags{display:flex;gap:4px;margin-top:4px}
+
+/* TOPBAR INFO */
+.connect-bar{background:var(--green3);padding:8px 16px;display:flex;align-items:center;gap:10px;cursor:pointer;flex-shrink:0;transition:background .2s}
+.connect-bar:hover{background:#1a4530}
+.connect-bar.connected{background:#063d29;cursor:default}
+.cb-dot{width:8px;height:8px;border-radius:50%;background:var(--text2);flex-shrink:0}
+.cb-dot.on{background:var(--green)}
+.cb-info{flex:1}
+.cb-t1{font-size:13px;font-weight:500}
+.cb-t2{font-size:11px;color:#b2dfdb}
+#wst-badge{font-size:11px;padding:2px 8px;border-radius:10px;background:var(--panel2);color:var(--text2)}
+#wst-badge.on{background:#063d29;color:var(--green)}
+
+/* REPORTS */
+#reports-view{display:none;padding:16px;overflow-y:auto;flex:1}
+.report-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-bottom:18px}
+.report-card{background:var(--panel);border-radius:10px;padding:16px}
+.rc-val{font-size:28px;font-weight:700;color:var(--green)}
+.rc-label{font-size:12px;color:var(--text2);margin-top:4px}
+
+/* CONFIGURAÇÕES */
+#config-view{display:none;padding:16px;overflow-y:auto;flex:1}
+.cfg-section{background:var(--panel);border-radius:10px;padding:14px;margin-bottom:12px}
+.cfg-title{font-size:13px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px}
+.cfg-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)}
+.cfg-row:last-child{border-bottom:none}
+.cfg-label{font-size:13px}
+.cfg-val{font-size:12px;color:var(--text2)}
+.toggle{width:36px;height:20px;background:var(--panel2);border-radius:10px;cursor:pointer;position:relative;transition:background .2s}
+.toggle.on{background:var(--green)}
+.toggle::after{content:'';position:absolute;width:16px;height:16px;background:#fff;border-radius:50%;top:2px;left:2px;transition:left .2s}
+.toggle.on::after{left:18px}
+
+/* COD PAIRING */
+.code-box{background:#111b21;border-radius:10px;padding:18px;margin:12px 0;display:none}
+.code-box p{color:var(--text2);font-size:12px;margin-bottom:8px}
+.code-display{font-size:28px;font-weight:700;color:var(--green);letter-spacing:5px;font-family:monospace;text-align:center}
+.code-hint{text-align:left;background:var(--panel2);border-radius:8px;padding:10px 14px;margin-top:12px}
+.code-hint p{font-size:11px;font-weight:600;color:var(--text);margin-bottom:5px}
+.code-hint ol{font-size:11px;color:var(--text2);padding-left:14px;line-height:1.9}
+
+/* RESPONSIVO */
+@media(max-width:1100px){#right{display:none}}
+@media(max-width:750px){#sb{display:none}}
 </style>
 </head>
 <body>
+
+<!-- NAV LATERAL -->
+<div id="nav">
+  <div id="nav-logo">&#129302;</div>
+  <button class="nav-btn active" onclick="navTo('chats')" title="Conversas" id="nav-chats">&#128172;<span class="badge" id="nav-badge" style="display:none">0</span></button>
+  <button class="nav-btn" onclick="navTo('contacts')" title="Contatos" id="nav-contacts">&#128101;</button>
+  <button class="nav-btn" onclick="navTo('kanban')" title="Kanban" id="nav-kanban">&#9776;</button>
+  <button class="nav-btn" onclick="navTo('reports')" title="Relatorios" id="nav-reports">&#128200;</button>
+  <div style="flex:1"></div>
+  <button class="nav-btn" onclick="navTo('config')" title="Configuracoes" id="nav-config">&#9881;</button>
+</div>
+
+<!-- SIDEBAR -->
 <div id="sb">
-  <div class="sh">
+  <div class="sb-header">
     <h2>&#129302; Agente Creator</h2>
-    <div style="display:flex;gap:2px">
-      <button class="ic" onclick="novaC()" title="Nova conversa">&#9998;</button>
-      <button class="ic">&#8942;</button>
+    <div class="sb-actions">
+      <button class="ic" onclick="abrirConnect()" title="Conectar WhatsApp">&#128241;</button>
+      <button class="ic" onclick="novaConversa()" title="Nova conversa">&#9998;</button>
+      <button class="ic" title="Mais">&#8942;</button>
     </div>
   </div>
-  <div class="sr">
-    <div class="si">
-      <svg width="17" height="17" viewBox="0 0 24 24" fill="#8696a0"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
-      <input type="text" placeholder="Pesquisar ou iniciar nova conversa" oninput="filtrar(this.value)">
+  <div class="connect-bar" id="connect-bar" onclick="abrirConnect()">
+    <div class="cb-dot" id="cb-dot"></div>
+    <div class="cb-info">
+      <div class="cb-t1" id="cb-t1">Conectar WhatsApp</div>
+      <div class="cb-t2" id="cb-t2">Clique para vincular seu numero</div>
+    </div>
+    <div id="wst-badge">Desconectado</div>
+  </div>
+  <div class="sb-tabs">
+    <div class="sb-tab active" onclick="setTab('all',this)">Todas</div>
+    <div class="sb-tab" onclick="setTab('open',this)">Abertas</div>
+    <div class="sb-tab" onclick="setTab('bot',this)">Bot</div>
+    <div class="sb-tab" onclick="setTab('resolved',this)">Resolvidas</div>
+  </div>
+  <div class="sb-filters">
+    <button class="filter-btn active" onclick="setFilter('all',this)">Todas</button>
+    <button class="filter-btn" onclick="setFilter('venda',this)">Venda</button>
+    <button class="filter-btn" onclick="setFilter('suporte',this)">Suporte</button>
+    <button class="filter-btn" onclick="setFilter('urgente',this)">Urgente</button>
+    <button class="filter-btn" onclick="setFilter('lead',this)">Lead</button>
+  </div>
+  <div class="sb-search">
+    <div class="search-inp">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="#8696a0"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+      <input type="text" placeholder="Buscar conversa ou contato..." oninput="buscar(this.value)">
     </div>
   </div>
-  <div id="cbar" onclick="abrirQR()">
-    <div class="cba">&#128241;</div>
-    <div class="cbt"><div class="t1">Conectar WhatsApp</div><div class="t2" id="cbar-sub">Digite seu numero para conectar</div></div>
-    <div id="wst">Desconectado</div>
-  </div>
-  <div id="cl"></div>
+  <div id="conv-list"></div>
 </div>
+
+<!-- MAIN -->
 <div id="main">
-  <div id="es">
+  <div id="empty">
     <div class="el">&#129302;</div>
-    <h3>Agente Creator</h3>
-    <p>Selecione uma conversa ou clique em &#9998; para criar uma nova</p>
+    <h3>Agente Creator CRM</h3>
+    <p>Selecione uma conversa ou crie uma nova</p>
   </div>
 </div>
-<div id="qo">
-  <div id="qb">
-    <h3>Conectar WhatsApp</h3>
-    <p>Digite seu numero com DDI para receber um codigo de 8 digitos no WhatsApp</p>
-    <div class="ph-wrap">
-      <input type="tel" id="phone-inp" placeholder="5511999999999" maxlength="15">
-      <button class="btn-pc" id="btn-pair" onclick="gerarPairingCode()">Conectar</button>
+
+<!-- PAINEL DIREITO -->
+<div id="right" style="display:none">
+  <!-- Contato -->
+  <div class="rp-section">
+    <div class="rp-title">CONTATO</div>
+    <div class="contact-av" id="rp-av" style="background:#2d6a4f">MS</div>
+    <div class="contact-name" id="rp-name">Maria Silva</div>
+    <div class="contact-num" id="rp-num">+55 11 99999-9999</div>
+    <div class="contact-badges">
+      <span class="status-pill open" id="rp-status">Aberta</span>
+    </div>
+  </div>
+  <!-- Acoes -->
+  <div class="rp-section">
+    <div class="rp-title">ACOES</div>
+    <button class="action-btn resolve" onclick="resolverConversa()">&#10003; Resolver Conversa</button>
+    <button class="action-btn transfer" onclick="transferirConversa()">&#8644; Transferir</button>
+    <button class="action-btn bot-toggle" id="btn-bot" onclick="toggleBot()">&#129302; Ativar Bot</button>
+  </div>
+  <!-- Tags -->
+  <div class="rp-section">
+    <div class="rp-title">TAGS <button onclick="adicionarTag()">+ Adicionar</button></div>
+    <div class="tag-list" id="tag-list">
+      <span class="tag venda">&#x25CF; Venda</span>
+      <span class="tag add-tag" onclick="adicionarTag()">+</span>
+    </div>
+  </div>
+  <!-- Agente -->
+  <div class="rp-section">
+    <div class="rp-title">AGENTE RESPONSAVEL</div>
+    <select class="assign-sel" id="assign-sel" onchange="atribuirAgente(this.value)">
+      <option value="bot">&#129302; Bot IA</option>
+      <option value="vanessa">Vanessa Labastie</option>
+      <option value="thiago">Thiago Labastie</option>
+      <option value="atendente1">Atendente 1</option>
+    </select>
+  </div>
+  <!-- Notas -->
+  <div class="rp-section">
+    <div class="rp-title">NOTA INTERNA</div>
+    <textarea class="notes-inp" id="notes-inp" placeholder="Adicione uma nota interna sobre este contato..."></textarea>
+    <button class="save-note-btn" onclick="salvarNota()">&#128190; Salvar Nota</button>
+  </div>
+  <!-- Respostas Rapidas -->
+  <div class="rp-section">
+    <div class="rp-title">RESPOSTAS RAPIDAS</div>
+    <div id="quick-replies">
+      <div class="quick-reply-item" onclick="usarQR('Ola! Obrigado por entrar em contato. Como posso ajudar?')">
+        <div class="qr-name">Saudacao</div>
+        <div class="qr-text">Ola! Obrigado por entrar em contato...</div>
+      </div>
+      <div class="quick-reply-item" onclick="usarQR('Aguarde um momento, vou verificar isso para voce!')">
+        <div class="qr-name">Aguardar</div>
+        <div class="qr-text">Aguarde um momento, vou verificar...</div>
+      </div>
+      <div class="quick-reply-item" onclick="usarQR('Muito obrigado pelo contato! Qualquer duvida estamos a disposicao.')">
+        <div class="qr-name">Encerramento</div>
+        <div class="qr-text">Muito obrigado pelo contato!...</div>
+      </div>
+      <div class="quick-reply-item" onclick="usarQR('Nosso horario de atendimento e segunda a sexta das 8h as 18h.')">
+        <div class="qr-name">Horario</div>
+        <div class="qr-text">Nosso horario e seg-sex 8h-18h...</div>
+      </div>
+    </div>
+  </div>
+  <!-- Info conversa -->
+  <div class="rp-section">
+    <div class="rp-title">INFORMACOES</div>
+    <div class="info-row"><span class="info-label">Canal</span><span class="info-val">&#128241; WhatsApp</span></div>
+    <div class="info-row"><span class="info-label">Departamento</span><span class="info-val" id="rp-dept">Vendas</span></div>
+    <div class="info-row"><span class="info-label">Iniciado em</span><span class="info-val" id="rp-inicio">-</span></div>
+    <div class="info-row"><span class="info-label">Mensagens</span><span class="info-val" id="rp-msgs">0</span></div>
+  </div>
+</div>
+
+<!-- MODAL CONNECT -->
+<div class="modal-bg" id="modal-connect">
+  <div class="modal">
+    <h3>&#128241; Conectar WhatsApp</h3>
+    <p>Digite seu numero com DDI para receber um codigo de 8 digitos</p>
+    <div style="display:flex;gap:8px;margin-bottom:4px">
+      <input type="tel" id="phone-inp" class="modal-input" style="margin:0;flex:1" placeholder="5511999999999">
+      <button class="btn-ok" id="btn-pair" onclick="gerarCodigo()" style="white-space:nowrap">Conectar</button>
     </div>
     <div class="code-box" id="code-box">
       <p>Digite este codigo no WhatsApp:</p>
-      <div class="code-display" id="code-display">--------</div>
+      <div class="code-display" id="code-display">- - - - - - - -</div>
+      <div class="code-hint">
+        <p>Como usar:</p>
+        <ol>
+          <li>Abra o WhatsApp no celular</li>
+          <li>Va em Dispositivos conectados</li>
+          <li>Conectar com numero de telefone</li>
+          <li>Digite o codigo acima</li>
+        </ol>
+      </div>
     </div>
-    <div class="code-steps" id="code-steps" style="display:none">
-      <p>Como usar o codigo:</p>
-      <ol>
-        <li>Abra o WhatsApp no celular</li>
-        <li>Toque em Mais opcoes ou Configuracoes</li>
-        <li>Toque em Dispositivos conectados</li>
-        <li>Toque em Conectar com numero de telefone</li>
-        <li>Digite o codigo acima</li>
-      </ol>
-    </div>
-    <div id="qst"></div>
-    <div class="qa">
-      <button class="qc" onclick="fecharQR()">Fechar</button>
+    <div id="pair-status" style="font-size:12px;color:var(--text2);margin-top:8px;min-height:18px"></div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="fecharModal('modal-connect')">Fechar</button>
     </div>
   </div>
 </div>
+
+<!-- MODAL NOVA CONVERSA -->
+<div class="modal-bg" id="modal-new">
+  <div class="modal">
+    <h3>Nova Conversa</h3>
+    <p>Crie uma nova conversa com um contato</p>
+    <input type="text" id="new-name" class="modal-input" placeholder="Nome do contato">
+    <input type="tel" id="new-phone" class="modal-input" placeholder="Numero WhatsApp (opcional)">
+    <select id="new-dept" class="modal-input" style="cursor:pointer">
+      <option value="Vendas">Vendas</option>
+      <option value="Suporte">Suporte</option>
+      <option value="Financeiro">Financeiro</option>
+      <option value="Marketing">Marketing</option>
+    </select>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="fecharModal('modal-new')">Cancelar</button>
+      <button class="btn-ok" onclick="criarConversa()">Criar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL TRANSFERIR -->
+<div class="modal-bg" id="modal-transfer">
+  <div class="modal">
+    <h3>Transferir Conversa</h3>
+    <p>Selecione o agente para transferir</p>
+    <select id="transfer-sel" class="modal-input" style="cursor:pointer">
+      <option value="vanessa">Vanessa Labastie</option>
+      <option value="thiago">Thiago Labastie</option>
+      <option value="atendente1">Atendente 1</option>
+    </select>
+    <textarea id="transfer-note" class="modal-input" placeholder="Mensagem para o agente (opcional)" style="resize:none;height:70px"></textarea>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="fecharModal('modal-transfer')">Cancelar</button>
+      <button class="btn-ok" onclick="confirmarTransferencia()">Transferir</button>
+    </div>
+  </div>
+</div>
+
 <script>
-var cur=null,ch={},no={},qi=null;
-var CL=['#1d3557','#2d6a4f','#6a0572','#3a86ff','#c77dff','#e07b39','#2a9d8f','#d62828'];
+// ========== STATE ==========
+var cur = null, qi = null, curTab = 'all', curFilter = 'all', botAtivo = {};
+var CL = ['#1d3557','#2d6a4f','#6a0572','#3a86ff','#c77dff','#e07b39','#2a9d8f','#d62828','#b5451b','#0e7490'];
+var AGENTES = {bot:'Bot IA', vanessa:'Vanessa Labastie', thiago:'Thiago Labastie', atendente1:'Atendente 1'};
+
+// Base de contatos/conversas
+var convs = {
+  d1:{id:'d1',name:'Maria Silva',phone:'5511911111111',dept:'Vendas',status:'open',tag:'venda',agente:'bot',msgs:[{r:'a',t:'Ola, Maria! Como posso ajudar?',ts:'09:30'},{r:'u',t:'Oi! Quero saber sobre os planos',ts:'09:31'}],notas:'',inicio:'Hoje 09:30'},
+  d2:{id:'d2',name:'Joao Santos',phone:'5511922222222',dept:'Suporte',status:'open',tag:'suporte',agente:'vanessa',msgs:[{r:'a',t:'Ola, Joao! Como posso ajudar?',ts:'09:15'},{r:'u',t:'Qual o horario de atendimento?',ts:'09:16'}],notas:'',inicio:'Hoje 09:15'},
+  d3:{id:'d3',name:'Ana Lima',phone:'5511933333333',dept:'Vendas',status:'resolved',tag:'venda',agente:'bot',msgs:[{r:'a',t:'Ola, Ana! Como posso ajudar?',ts:'08:50'},{r:'u',t:'Obrigada pelo atendimento!',ts:'08:55'}],notas:'Cliente satisfeita',inicio:'Hoje 08:50'},
+  d4:{id:'d4',name:'Pedro Costa',phone:'5511944444444',dept:'Suporte',status:'pending',tag:'urgente',agente:'thiago',msgs:[{r:'a',t:'Ola, Pedro! Como posso ajudar?',ts:'08:30'},{r:'u',t:'Preciso de ajuda com meu pedido',ts:'08:32'}],notas:'Pedido atrasado - verificar',inicio:'Hoje 08:30'},
+  d5:{id:'d5',name:'Juliana Ferreira',phone:'5511955555555',dept:'Marketing',status:'bot',tag:'lead',agente:'bot',msgs:[{r:'a',t:'Ola, Juliana! Como posso ajudar?',ts:'08:00'},{r:'u',t:'Voce pode me ajudar?',ts:'08:01'}],notas:'',inicio:'Hoje 08:00'}
+};
+
 function h(){return new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});}
 function av(n){return n.split(' ').map(function(w){return w[0]||'';}).join('').substring(0,2).toUpperCase();}
 function cr(n){return CL[n.charCodeAt(0)%CL.length];}
-function addC(id,nm,pv,ts,bd){
-  if(document.getElementById('c-'+id))return;
-  var d=document.createElement('div');
-  d.className='cv';d.id='c-'+id;
-  d.innerHTML='<div class="av" style="background:'+cr(nm)+'">'+av(nm)+'</div><div class="cb"><div class="r1"><span class="nm">'+nm+'</span><span class="ts">'+ts+'</span></div><div class="r2"><span class="pv">'+pv+'</span>'+(bd?'<div class="bd">'+bd+'</div>':'')+'</div></div>';
-  d.onclick=function(){sel(id,nm);};
-  document.getElementById('cl').insertBefore(d,document.getElementById('cl').firstChild);
+
+// ========== NAV ==========
+function navTo(sec){
+  document.querySelectorAll('.nav-btn').forEach(function(b){b.classList.remove('active');});
+  document.getElementById('nav-'+sec).classList.add('active');
+  document.getElementById('sb').style.display = sec==='chats'?'flex':'none';
+  document.getElementById('right').style.display = (sec==='chats'&&cur)?'flex':'none';
+  // Show/hide main sections
+  var main = document.getElementById('main');
+  main.innerHTML = '';
+  if(sec==='chats'){
+    document.getElementById('sb').style.display='flex';
+    if(cur) renderChat(cur); else renderEmpty();
+    return;
+  }
+  document.getElementById('sb').style.display='none';
+  if(sec==='kanban') renderKanban(main);
+  else if(sec==='contacts') renderContacts(main);
+  else if(sec==='reports') renderReports(main);
+  else if(sec==='config') renderConfig(main);
 }
-function sel(id,nm){
-  cur=id;if(!ch[id])ch[id]=[];
-  document.querySelectorAll('.cv').forEach(function(e){e.classList.remove('active');});
-  var el=document.getElementById('c-'+id);
-  if(el){el.classList.add('active');var b=el.querySelector('.bd');if(b)b.remove();}
-  renderM(id,nm);
+
+function renderEmpty(){
+  var m=document.getElementById('main');
+  m.innerHTML='<div id="empty"><div class="el">&#129302;</div><h3>Agente Creator CRM</h3><p>Selecione uma conversa ou crie uma nova</p></div>';
 }
-function renderM(id,nm){
-  var m=document.getElementById('main'),c=cr(nm),a=av(nm);
-  m.innerHTML='<div class="mh"><div class="mhav" style="background:'+c+'">'+a+'</div><div class="mi"><div id="mn">'+nm+'</div><div id="ms">online</div></div><div style="display:flex;gap:2px"><button class="ic">&#128269;</button><button class="ic">&#8942;</button></div></div><div id="bg"></div><div class="ft"><button class="ic" style="color:#8696a0;font-size:22px">&#128512;</button><textarea id="fi" placeholder="Digite uma mensagem" rows="1"></textarea><button id="fs" onclick="env()"><svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg></button></div>';
-  document.getElementById('fi').addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();env();}});
-  document.getElementById('fi').addEventListener('input',function(){this.style.height='auto';this.style.height=Math.min(this.scrollHeight,130)+'px';});
-  renderBs(id);
+
+// ========== RENDER SIDEBAR ==========
+function renderSidebar(){
+  var cl=document.getElementById('conv-list');
+  cl.innerHTML='';
+  var items=Object.values(convs).filter(function(c){
+    if(curTab!=='all'&&c.status!==curTab)return false;
+    if(curFilter!=='all'&&c.tag!==curFilter)return false;
+    return true;
+  });
+  // Sort by last msg time
+  items.sort(function(a,b){return (b.msgs.length)-(a.msgs.length);});
+  items.forEach(function(c){
+    var lastMsg=c.msgs[c.msgs.length-1];
+    var d=document.createElement('div');
+    d.className='conv-item'+(cur===c.id?' active':'');
+    d.id='cv-'+c.id;
+    var tagHtml=c.tag?'<span class="conv-tag '+c.tag+'">'+c.tag+'</span>':'';
+    var badgeHtml=c.unread?'<div class="conv-badge'+(c.status==='bot'?' bot':'')+'">'+c.unread+'</div>':'';
+    var statusDot='<div class="conv-status '+c.status+'"></div>';
+    d.innerHTML='<div class="conv-av" style="background:'+cr(c.name)+'">'+av(c.name)+'<div class="status-dot'+(c.status==='open'?' online':c.status==='bot'?' bot':'')+'"></div></div>'+
+      '<div class="conv-info"><div class="conv-r1"><span class="conv-name">'+c.name+'</span><span class="conv-time">'+(lastMsg?lastMsg.ts:'')+'</span></div>'+
+      '<div class="conv-r2"><span class="conv-prev">'+(lastMsg?lastMsg.t:'')+'</span></div>'+
+      '<div class="conv-r3">'+tagHtml+badgeHtml+statusDot+'</div></div>';
+    d.onclick=function(){selConv(c.id);};
+    cl.appendChild(d);
+  });
 }
-function renderBs(id){
-  var bg=document.getElementById('bg');if(!bg)return;
-  bg.innerHTML='<div class="dv"><span>HOJE</span></div>';
-  (ch[id]||[]).forEach(function(m){addB(m,bg);});
-  bg.scrollTop=bg.scrollHeight;
+
+function setTab(tab,el){
+  curTab=tab;
+  document.querySelectorAll('.sb-tab').forEach(function(t){t.classList.remove('active');});
+  el.classList.add('active');
+  renderSidebar();
 }
-function addB(m,bg){
-  if(!bg)return;
-  var d=document.createElement('div');d.className='mw '+(m.r==='u'?'o':'');
-  var t=(m.t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  var tk=m.r==='u'?'<span class="btk">&#10003;&#10003;</span>':'';
-  d.innerHTML='<div class="bl '+(m.r==='u'?'o':'i')+'">'+t+'<div class="bt"><span class="bts">'+m.ts+'</span>'+tk+'</div></div>';
-  bg.appendChild(d);
+function setFilter(f,el){
+  curFilter=f;
+  document.querySelectorAll('.filter-btn').forEach(function(b){b.classList.remove('active');});
+  el.classList.add('active');
+  renderSidebar();
 }
-function updP(id,t){
-  var el=document.getElementById('c-'+id);if(!el)return;
-  var p=el.querySelector('.pv');if(p)p.textContent=t.substring(0,46);
-  var ts=el.querySelector('.ts');if(ts)ts.textContent=h();
-  document.getElementById('cl').insertBefore(el,document.getElementById('cl').firstChild);
-}
-function ty(){
-  var bg=document.getElementById('bg');if(!bg)return null;
-  var d=document.createElement('div');d.className='mw';d.id='ty';
-  d.innerHTML='<div class="bl i"><div class="tyd"><span></span><span></span><span></span></div></div>';
-  bg.appendChild(d);bg.scrollTop=bg.scrollHeight;return d;
-}
-function env(){
-  var fi=document.getElementById('fi');if(!fi||!cur)return;
-  var t=fi.value.trim();if(!t)return;
-  fi.value='';fi.style.height='auto';
-  var m={r:'u',t:t,ts:h()};ch[cur].push(m);
-  var bg=document.getElementById('bg');addB(m,bg);if(bg)bg.scrollTop=bg.scrollHeight;
-  updP(cur,t);
-  var fs=document.getElementById('fs');if(fs)fs.disabled=true;
-  var td=ty();
-  var msgs=ch[cur].map(function(x){return{role:x.r==='u'?'user':'assistant',content:x.t};});
-  fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:msgs})})
-    .then(function(r){return r.json();})
-    .then(function(d){
-      if(td)td.remove();
-      var rep=d.reply||d.error||'Erro';
-      var rm={r:'a',t:rep,ts:h()};ch[cur].push(rm);
-      addB(rm,document.getElementById('bg'));
-      var bg2=document.getElementById('bg');if(bg2)bg2.scrollTop=bg2.scrollHeight;
-      updP(cur,rep);if(fs)fs.disabled=false;
-    })
-    .catch(function(e){
-      if(td)td.remove();
-      var em={r:'a',t:'Erro: '+e.message,ts:h()};ch[cur].push(em);
-      addB(em,document.getElementById('bg'));if(fs)fs.disabled=false;
-    });
-}
-function novaC(){
-  var nm=prompt('Nome do contato:');if(!nm||!nm.trim())return;
-  nm=nm.trim();var id='c'+Date.now();
-  ch[id]=[{r:'a',t:'Ola, '+nm+'! Sou o Agente Creator com IA. Como posso ajudar?',ts:h()}];
-  addC(id,nm,'Ola, '+nm+'!',h(),'');sel(id,nm);
-}
-function filtrar(q){
-  document.querySelectorAll('.cv').forEach(function(el){
-    var n=el.querySelector('.nm');
+function buscar(q){
+  document.querySelectorAll('.conv-item').forEach(function(el){
+    var n=el.querySelector('.conv-name');
     el.style.display=(!q||(n&&n.textContent.toLowerCase().includes(q.toLowerCase())))?'':'none';
   });
 }
-function abrirQR(){document.getElementById('qo').style.display='flex';}
-function fecharQR(){
-  document.getElementById('qo').style.display='none';
-  if(qi){clearInterval(qi);qi=null;}
-  document.getElementById('code-box').style.display='none';
-  document.getElementById('code-steps').style.display='none';
-  document.getElementById('qst').textContent='';
-  document.getElementById('btn-pair').disabled=false;
-  document.getElementById('btn-pair').textContent='Conectar';
+
+// ========== SELECIONAR CONVERSA ==========
+function selConv(id){
+  cur=id;
+  document.querySelectorAll('.conv-item').forEach(function(e){e.classList.remove('active');});
+  var el=document.getElementById('cv-'+id);
+  if(el)el.classList.add('active');
+  convs[id].unread=0;
+  renderChat(id);
+  renderRightPanel(id);
+  document.getElementById('right').style.display='flex';
+  navTo('chats');
 }
-function gerarPairingCode(){
+
+// ========== RENDER CHAT ==========
+function renderChat(id){
+  var c=convs[id];
+  var m=document.getElementById('main');
+  var col=cr(c.name),a=av(c.name);
+  var statusLabel={open:'Aberta',pending:'Pendente',resolved:'Resolvida',bot:'Bot'}[c.status]||'';
+  m.innerHTML='<div class="chat-header"><div class="chat-hav" style="background:'+col+'">'+a+'</div>'+
+    '<div class="chat-hinfo"><div class="chat-hname">'+c.name+'</div><div class="chat-hsub">'+c.dept+' &bull; '+statusLabel+' &bull; '+AGENTES[c.agente]+'</div></div>'+
+    '<div class="chat-hactions">'+
+    '<button class="ic" onclick="adicionarNotaRapida()" title="Nota interna">&#128203;</button>'+
+    '<button class="ic" onclick="resolverConversa()" title="Resolver">&#10003;</button>'+
+    '<button class="ic" onclick="toggleBot()" title="Bot">&#129302;</button>'+
+    '<button class="ic" title="Buscar">&#128269;</button>'+
+    '<button class="ic" title="Mais">&#8942;</button>'+
+    '</div></div>'+
+    '<div id="msgs"></div>'+
+    '<div class="chat-footer">'+
+    '<div class="footer-actions">'+
+    '<button class="footer-btn" onclick="usarQR()">&#9889; Rapida</button>'+
+    '<button class="footer-btn" onclick="adicionarNotaRapida()">&#128203; Nota</button>'+
+    '<button class="footer-btn">&#128206; Arquivo</button>'+
+    '<button class="footer-btn">&#128512; Emoji</button>'+
+    '</div>'+
+    '<div class="footer-inp-wrap">'+
+    '<textarea id="msg-inp" placeholder="Digite uma mensagem..." rows="1"></textarea>'+
+    '<button id="send-btn" onclick="enviar()"><svg width="22" height="22" viewBox="0 0 24 24" fill="white"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg></button>'+
+    '</div></div>';
+  document.getElementById('msg-inp').addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();enviar();}});
+  document.getElementById('msg-inp').addEventListener('input',function(){this.style.height='auto';this.style.height=Math.min(this.scrollHeight,120)+'px';});
+  renderMsgs(id);
+}
+
+function renderMsgs(id){
+  var bg=document.getElementById('msgs');if(!bg)return;
+  bg.innerHTML='<div class="date-div"><span>HOJE</span></div>';
+  (convs[id].msgs||[]).forEach(function(m){addBubble(m,bg,id);});
+  bg.scrollTop=bg.scrollHeight;
+}
+
+function addBubble(m,bg,id){
+  if(!bg)return;
+  var isOut=m.r==='u'||m.r==='out';
+  var isNote=m.r==='note';
+  var d=document.createElement('div');
+  d.className='msg-wrap'+(isOut?' out':'');
+  var t=(m.t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  var cls='msg-bubble '+(isNote?'note':isOut?'out':'in');
+  var tick=isOut?'<span class="msg-tick">&#10003;&#10003;</span>':'';
+  var noteIcon=isNote?'&#128203; ':'';
+  d.innerHTML='<div class="'+cls+'">'+noteIcon+t+'<div class="msg-meta"><span class="msg-time">'+m.ts+'</span>'+tick+'</div></div>';
+  bg.appendChild(d);
+}
+
+// ========== ENVIAR MENSAGEM ==========
+function enviar(){
+  var fi=document.getElementById('msg-inp');if(!fi||!cur)return;
+  var t=fi.value.trim();if(!t)return;
+  fi.value='';fi.style.height='auto';
+  var m={r:'out',t:t,ts:h()};
+  convs[cur].msgs.push(m);
+  var bg=document.getElementById('msgs');
+  addBubble(m,bg,cur);
+  if(bg)bg.scrollTop=bg.scrollHeight;
+  updSidebar(cur,t);
+  // IA responde se bot ativo
+  if(convs[cur].agente==='bot'||botAtivo[cur]){
+    var td=addTyping();
+    var msgs=convs[cur].msgs.map(function(x){return{role:x.r==='out'||x.r==='u'?'user':'assistant',content:x.t};});
+    fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:msgs})})
+      .then(function(r){return r.json();})
+      .then(function(d){
+        if(td)td.remove();
+        var rep=d.reply||'Erro';
+        var rm={r:'a',t:rep,ts:h()};
+        convs[cur].msgs.push(rm);
+        addBubble(rm,document.getElementById('msgs'),cur);
+        var bg2=document.getElementById('msgs');if(bg2)bg2.scrollTop=bg2.scrollHeight;
+        updSidebar(cur,rep);
+      }).catch(function(){if(td)td.remove();});
+  }
+}
+
+function addTyping(){
+  var bg=document.getElementById('msgs');if(!bg)return null;
+  var d=document.createElement('div');d.className='msg-wrap';d.id='typing-indicator';
+  d.innerHTML='<div class="msg-bubble in"><div class="typing"><span></span><span></span><span></span></div></div>';
+  bg.appendChild(d);bg.scrollTop=bg.scrollHeight;return d;
+}
+
+function updSidebar(id,t){
+  renderSidebar();
+}
+
+// ========== PAINEL DIREITO ==========
+function renderRightPanel(id){
+  var c=convs[id];
+  document.getElementById('rp-av').textContent=av(c.name);
+  document.getElementById('rp-av').style.background=cr(c.name);
+  document.getElementById('rp-name').textContent=c.name;
+  document.getElementById('rp-num').textContent=c.phone?'+'+c.phone:'Sem numero';
+  var sp=document.getElementById('rp-status');
+  sp.textContent={open:'Aberta',pending:'Pendente',resolved:'Resolvida',bot:'Bot'}[c.status]||c.status;
+  sp.className='status-pill '+c.status;
+  document.getElementById('rp-dept').textContent=c.dept||'-';
+  document.getElementById('rp-inicio').textContent=c.inicio||'-';
+  document.getElementById('rp-msgs').textContent=c.msgs.length;
+  document.getElementById('notes-inp').value=c.notas||'';
+  document.getElementById('assign-sel').value=c.agente||'bot';
+  // Tags
+  var tl=document.getElementById('tag-list');
+  tl.innerHTML='';
+  if(c.tag){var ts=document.createElement('span');ts.className='tag '+c.tag;ts.textContent='● '+c.tag;tl.appendChild(ts);}
+  var add=document.createElement('span');add.className='tag add-tag';add.textContent='+';add.onclick=adicionarTag;tl.appendChild(add);
+  // Bot button
+  var bb=document.getElementById('btn-bot');
+  if(bb)bb.textContent=(botAtivo[id]||c.agente==='bot')?'&#129302; Desativar Bot':'&#129302; Ativar Bot';
+}
+
+// ========== ACOES ==========
+function resolverConversa(){
+  if(!cur)return;
+  convs[cur].status='resolved';
+  renderSidebar();
+  renderRightPanel(cur);
+  renderChat(cur);
+  var bg=document.getElementById('msgs');
+  addBubble({r:'note',t:'Conversa marcada como RESOLVIDA',ts:h()},bg,cur);
+  if(bg)bg.scrollTop=bg.scrollHeight;
+}
+
+function transferirConversa(){
+  document.getElementById('modal-transfer').classList.add('open');
+}
+
+function confirmarTransferencia(){
+  if(!cur)return;
+  var agente=document.getElementById('transfer-sel').value;
+  var nota=document.getElementById('transfer-note').value;
+  convs[cur].agente=agente;
+  fecharModal('modal-transfer');
+  renderRightPanel(cur);
+  renderChat(cur);
+  var bg=document.getElementById('msgs');
+  addBubble({r:'note',t:'Conversa transferida para '+AGENTES[agente]+(nota?' - '+nota:''),ts:h()},bg,cur);
+  if(bg)bg.scrollTop=bg.scrollHeight;
+}
+
+function toggleBot(){
+  if(!cur)return;
+  botAtivo[cur]=!botAtivo[cur];
+  convs[cur].agente=botAtivo[cur]?'bot':convs[cur].agente;
+  renderRightPanel(cur);
+  var bg=document.getElementById('msgs');
+  addBubble({r:'note',t:'Bot '+(botAtivo[cur]?'ATIVADO':'DESATIVADO'),ts:h()},bg,cur);
+  if(bg)bg.scrollTop=bg.scrollHeight;
+}
+
+function adicionarNotaRapida(){
+  var txt=prompt('Nota interna:');
+  if(!txt||!txt.trim())return;
+  var bg=document.getElementById('msgs');
+  addBubble({r:'note',t:txt.trim(),ts:h()},bg,cur);
+  if(bg)bg.scrollTop=bg.scrollHeight;
+}
+
+function atribuirAgente(val){
+  if(!cur)return;
+  convs[cur].agente=val;
+  renderChat(cur);
+}
+
+function salvarNota(){
+  if(!cur)return;
+  convs[cur].notas=document.getElementById('notes-inp').value;
+  var bg=document.getElementById('msgs');
+  addBubble({r:'note',t:'Nota salva: '+convs[cur].notas,ts:h()},bg,cur);
+  if(bg)bg.scrollTop=bg.scrollHeight;
+}
+
+function adicionarTag(){
+  var tags=['venda','suporte','urgente','lead'];
+  var t=prompt('Tag ('+tags.join(', ')+'):');
+  if(!t||!cur)return;
+  convs[cur].tag=t.toLowerCase();
+  renderRightPanel(cur);
+  renderSidebar();
+}
+
+function usarQR(texto){
+  var fi=document.getElementById('msg-inp');
+  if(!fi)return;
+  if(texto){fi.value=texto;}
+  fi.focus();
+}
+
+// ========== NOVA CONVERSA ==========
+function novaConversa(){
+  document.getElementById('modal-new').classList.add('open');
+}
+
+function criarConversa(){
+  var nm=document.getElementById('new-name').value.trim();
+  if(!nm)return;
+  var id='c'+Date.now();
+  var dept=document.getElementById('new-dept').value;
+  var phone=document.getElementById('new-phone').value.replace(/D/g,'');
+  convs[id]={id:id,name:nm,phone:phone,dept:dept,status:'open',tag:'',agente:'bot',
+    msgs:[{r:'a',t:'Ola, '+nm.split(' ')[0]+'! Como posso ajudar?',ts:h()}],notas:'',inicio:'Agora '+h()};
+  fecharModal('modal-new');
+  document.getElementById('new-name').value='';
+  document.getElementById('new-phone').value='';
+  renderSidebar();
+  selConv(id);
+}
+
+// ========== CONNECT WHATSAPP ==========
+function abrirConnect(){
+  document.getElementById('modal-connect').classList.add('open');
+}
+
+function fecharModal(id){document.getElementById(id).classList.remove('open');}
+
+function gerarCodigo(){
   var phone=document.getElementById('phone-inp').value.replace(/D/g,'');
-  if(phone.length < 10){document.getElementById('qst').textContent='Digite um numero valido com DDI (ex: 5511999999999)';return;}
-  document.getElementById('btn-pair').disabled=true;
-  document.getElementById('btn-pair').textContent='Aguarde...';
-  document.getElementById('qst').textContent='Criando instancia...';
+  if(phone.length<10){document.getElementById('pair-status').textContent='Numero invalido. Ex: 5511999999999';return;}
+  var btn=document.getElementById('btn-pair');
+  btn.disabled=true;btn.textContent='Aguarde...';
+  document.getElementById('pair-status').textContent='Criando instancia...';
   fetch('/pairing-code',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone:phone})})
     .then(function(r){return r.json();})
     .then(function(d){
+      btn.disabled=false;btn.textContent='Novo codigo';
       if(d.code){
         document.getElementById('code-box').style.display='block';
         document.getElementById('code-display').textContent=d.code;
-        document.getElementById('code-steps').style.display='block';
-        document.getElementById('qst').textContent='Codigo valido por alguns minutos. Use rapidamente!';
-        document.getElementById('btn-pair').textContent='Novo codigo';
-        document.getElementById('btn-pair').disabled=false;
+        document.getElementById('pair-status').textContent='Codigo valido por alguns minutos!';
         if(qi)clearInterval(qi);
         qi=setInterval(verificarConexao,3000);
       } else {
-        document.getElementById('qst').textContent='Erro: '+(d.error||'Tente novamente');
-        document.getElementById('btn-pair').disabled=false;
-        document.getElementById('btn-pair').textContent='Conectar';
+        document.getElementById('pair-status').textContent='Erro: '+(d.error||'Tente novamente');
+        btn.textContent='Tentar novamente';
       }
     }).catch(function(e){
-      document.getElementById('qst').textContent='Erro: '+e.message;
-      document.getElementById('btn-pair').disabled=false;
-      document.getElementById('btn-pair').textContent='Conectar';
+      btn.disabled=false;btn.textContent='Tentar novamente';
+      document.getElementById('pair-status').textContent='Erro: '+e.message;
     });
 }
+
 function verificarConexao(){
   fetch('/qr/agente1').then(function(r){return r.json();}).then(function(d){
-    if(d.status==='connected'){
-      clearInterval(qi);qi=null;fecharQR();
-      document.getElementById('wst').textContent='Conectado';
-      document.getElementById('wst').className='on';
-      document.getElementById('cbar').style.background='#1d4e3a';
-      document.querySelector('.cbt .t1').textContent='WhatsApp Conectado';
-      document.getElementById('cbar-sub').textContent='Agente respondendo automaticamente';
+    if(d.status==='connected'||d.status==='open'){
+      clearInterval(qi);qi=null;
+      document.getElementById('cb-dot').classList.add('on');
+      document.getElementById('cb-t1').textContent='WhatsApp Conectado';
+      document.getElementById('cb-t2').textContent='Agente respondendo automaticamente';
+      document.getElementById('wst-badge').textContent='Conectado';
+      document.getElementById('wst-badge').classList.add('on');
+      document.getElementById('connect-bar').classList.add('connected');
+      fecharModal('modal-connect');
     }
   }).catch(function(){});
 }
-var demos=[
-  {id:'d1',n:'Maria Silva',p:'Oi! Quero saber sobre os planos',bd:'3'},
-  {id:'d2',n:'Joao Santos',p:'Qual o horario de atendimento?',bd:'1'},
-  {id:'d3',n:'Ana Lima',p:'Obrigada pelo atendimento!',bd:''},
-  {id:'d4',n:'Pedro Costa',p:'Preciso de ajuda com meu pedido',bd:'5'},
-  {id:'d5',n:'Juliana Ferreira',p:'Voce pode me ajudar?',bd:'2'}
-];
-demos.forEach(function(d,i){
-  var t='09:3'+i;
-  ch[d.id]=[{r:'a',t:'Ola, '+d.n.split(' ')[0]+'! Sou o Agente Creator. Como posso ajudar?',ts:t},{r:'u',t:d.p,ts:t}];
-  addC(d.id,d.n,d.p,h(),d.bd||'');
-});
-sel('d1','Maria Silva');
+
+// ========== KANBAN ==========
+function renderKanban(main){
+  var cols=[
+    {id:'open',label:'Abertas',color:'#00a884'},
+    {id:'pending',label:'Pendentes',color:'#f59e0b'},
+    {id:'bot',label:'Bot',color:'#8b5cf6'},
+    {id:'resolved',label:'Resolvidas',color:'#8696a0'}
+  ];
+  main.innerHTML='<div style="display:flex;gap:14px;padding:16px;overflow-x:auto;flex:1;align-items:flex-start"></div>';
+  var wrap=main.querySelector('div');
+  cols.forEach(function(col){
+    var items=Object.values(convs).filter(function(c){return c.status===col.id;});
+    var html='<div style="min-width:230px;background:var(--panel);border-radius:10px;border-top:3px solid '+col.color+'">'+
+      '<div style="padding:12px 14px;font-size:13px;font-weight:600;display:flex;justify-content:space-between;border-bottom:1px solid var(--border)">'+
+      col.label+'<span style="background:var(--panel2);border-radius:10px;padding:1px 8px;font-size:11px">'+items.length+'</span></div>'+
+      '<div style="padding:8px;display:flex;flex-direction:column;gap:6px;min-height:100px">';
+    items.forEach(function(c){
+      html+='<div style="background:var(--sb);border-radius:8px;padding:10px 12px;cursor:pointer" onclick="selConv(''+c.id+'');navTo('chats')">'+
+        '<div style="font-size:13px;font-weight:500;margin-bottom:4px">'+c.name+'</div>'+
+        '<div style="font-size:11px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+(c.msgs[c.msgs.length-1]||{t:''}).t+'</div>'+
+        '<div style="font-size:10px;color:var(--text2);margin-top:4px">'+c.dept+' &bull; '+AGENTES[c.agente]+'</div></div>';
+    });
+    html+='</div></div>';
+    var el=document.createElement('div');el.innerHTML=html;
+    wrap.appendChild(el.firstChild);
+  });
+}
+
+// ========== CONTATOS ==========
+function renderContacts(main){
+  main.style.overflowY='auto';
+  main.style.padding='16px';
+  var unique={};
+  Object.values(convs).forEach(function(c){unique[c.name]=c;});
+  var html='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><h2>Contatos ('+Object.keys(unique).length+')</h2>'+
+    '<button class="btn-ok" onclick="novaConversa()">+ Novo</button></div>'+
+    '<div style="background:var(--panel2);border-radius:8px;display:flex;align-items:center;gap:8px;padding:8px 12px;margin-bottom:12px">'+
+    '<svg width="15" height="15" viewBox="0 0 24 24" fill="#8696a0"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>'+
+    '<input type="text" placeholder="Buscar contatos..." style="background:none;border:none;outline:none;color:var(--text);font-size:13px;width:100%"></div>';
+  Object.values(unique).forEach(function(c){
+    html+='<div style="background:var(--panel);border-radius:10px;padding:14px;margin-bottom:8px;display:flex;align-items:center;gap:12px;cursor:pointer" onclick="selConv(''+c.id+'');navTo('chats')">'+
+      '<div style="width:44px;height:44px;border-radius:50%;background:'+cr(c.name)+';display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;color:#fff;flex-shrink:0">'+av(c.name)+'</div>'+
+      '<div style="flex:1"><div style="font-size:14px;font-weight:600">'+c.name+'</div>'+
+      '<div style="font-size:12px;color:var(--text2);margin-top:2px">'+(c.phone?'+'+c.phone:'Sem numero')+' &bull; '+c.dept+'</div>'+
+      (c.tag?'<span class="tag '+c.tag+'" style="margin-top:4px;display:inline-block">'+c.tag+'</span>':'')+
+      '</div><span class="status-pill '+c.status+'">'+(c.status==='open'?'Aberta':c.status==='resolved'?'Resolvida':c.status)+'</span></div>';
+  });
+  main.innerHTML=html;
+}
+
+// ========== RELATORIOS ==========
+function renderReports(main){
+  var total=Object.keys(convs).length;
+  var open=Object.values(convs).filter(function(c){return c.status==='open';}).length;
+  var resolved=Object.values(convs).filter(function(c){return c.status==='resolved';}).length;
+  var msgs=Object.values(convs).reduce(function(s,c){return s+c.msgs.length;},0);
+  main.innerHTML='<div style="padding:20px;overflow-y:auto;flex:1">'+
+    '<h2 style="margin-bottom:18px">&#128200; Relatorios</h2>'+
+    '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:24px">'+
+    ['<div style="background:var(--panel);border-radius:10px;padding:16px"><div style="font-size:28px;font-weight:700;color:var(--green)">'+total+'</div><div style="font-size:12px;color:var(--text2);margin-top:4px">Total Conversas</div></div>',
+     '<div style="background:var(--panel);border-radius:10px;padding:16px"><div style="font-size:28px;font-weight:700;color:var(--green)">'+open+'</div><div style="font-size:12px;color:var(--text2);margin-top:4px">Em Aberto</div></div>',
+     '<div style="background:var(--panel);border-radius:10px;padding:16px"><div style="font-size:28px;font-weight:700;color:var(--blue)">'+resolved+'</div><div style="font-size:12px;color:var(--text2);margin-top:4px">Resolvidas</div></div>',
+     '<div style="background:var(--panel);border-radius:10px;padding:16px"><div style="font-size:28px;font-weight:700;color:var(--yellow)">'+msgs+'</div><div style="font-size:12px;color:var(--text2);margin-top:4px">Mensagens</div></div>',
+     '<div style="background:var(--panel);border-radius:10px;padding:16px"><div style="font-size:28px;font-weight:700;color:var(--purple)">98%</div><div style="font-size:12px;color:var(--text2);margin-top:4px">Satisfacao</div></div>',
+     '<div style="background:var(--panel);border-radius:10px;padding:16px"><div style="font-size:28px;font-weight:700;color:var(--red)">&lt;2min</div><div style="font-size:12px;color:var(--text2);margin-top:4px">Tempo Resposta</div></div>'
+    ].join('')+'</div>'+
+    '<div style="background:var(--panel);border-radius:10px;padding:16px;margin-bottom:12px">'+
+    '<div style="font-size:13px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px">Por Agente</div>'+
+    Object.entries(AGENTES).map(function(e){
+      var cnt=Object.values(convs).filter(function(c){return c.agente===e[0];}).length;
+      return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)"><span style="font-size:13px">'+e[1]+'</span><span style="font-size:13px;font-weight:600;color:var(--green)">'+cnt+' conversas</span></div>';
+    }).join('')+
+    '</div></div>';
+}
+
+// ========== CONFIGURACOES ==========
+function renderConfig(main){
+  main.innerHTML='<div style="padding:20px;overflow-y:auto;flex:1;max-width:600px">'+
+    '<h2 style="margin-bottom:18px">&#9881; Configuracoes</h2>'+
+    '<div style="background:var(--panel);border-radius:10px;padding:14px;margin-bottom:12px">'+
+    '<div style="font-size:13px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px">Bot IA</div>'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)"><span>Resposta automatica</span><div class="toggle on"></div></div>'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)"><span>Fora do horario</span><div class="toggle on"></div></div>'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0"><span>Transferir para humano se necessario</span><div class="toggle on"></div></div>'+
+    '</div>'+
+    '<div style="background:var(--panel);border-radius:10px;padding:14px;margin-bottom:12px">'+
+    '<div style="font-size:13px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px">Horario de Atendimento</div>'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)"><span>Seg - Sex</span><span style="color:var(--text2)">08:00 - 18:00</span></div>'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0"><span>Sabado</span><span style="color:var(--text2)">09:00 - 13:00</span></div>'+
+    '</div>'+
+    '<div style="background:var(--panel);border-radius:10px;padding:14px;margin-bottom:12px">'+
+    '<div style="font-size:13px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px">Agentes</div>'+
+    Object.entries(AGENTES).map(function(e){
+      return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)"><span>'+e[1]+'</span><span style="color:var(--green);font-size:12px">Ativo</span></div>';
+    }).join('')+
+    '<button class="btn-ok" style="margin-top:10px;width:100%">+ Adicionar Agente</button>'+
+    '</div>'+
+    '<div style="background:var(--panel);border-radius:10px;padding:14px">'+
+    '<div style="font-size:13px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px">Departamentos</div>'+
+    ['Vendas','Suporte','Financeiro','Marketing'].map(function(d){
+      return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)"><span>'+d+'</span><span style="color:var(--text2);font-size:12px">Ativo</span></div>';
+    }).join('')+
+    '<button class="btn-ok" style="margin-top:10px;width:100%">+ Adicionar Departamento</button>'+
+    '</div></div>';
+}
+
+// ========== INIT ==========
+renderSidebar();
+renderEmpty();
 </script>
 </body>
-        </html>
+  </html>
