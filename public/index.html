@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Agente Creator</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#111b21;color:#e9edef;height:100vh;display:flex;overflow:hidden}
+#sb{width:410px;min-width:410px;background:#111b21;border-right:1px solid #2a3942;display:flex;flex-direction:column}
+.sh{background:#202c33;padding:10px 16px;display:flex;align-items:center;justify-content:space-between;height:60px}
+.sh h2{font-size:18px;font-weight:600;color:#e9edef}
+.ic{background:none;border:none;color:#aebac1;cursor:pointer;padding:8px;border-radius:50%;font-size:20px;line-height:1;display:flex;align-items:center;justify-content:center}
+.ic:hover{background:#2a3942}
+.sr{padding:8px 12px}
+.si{background:#202c33;border-radius:8px;display:flex;align-items:center;gap:9px;padding:8px 12px}
+.si input{background:none;border:none;outline:none;color:#e9edef;font-size:15px;width:100%}
+.si input::placeholder{color:#8696a0}
+#cbar{padding:10px 14px;background:#005c4b;display:flex;align-items:center;gap:10px;cursor:pointer}
+#cbar:hover{background:#017561}
+.cba{width:42px;height:42px;border-radius:50%;background:#00a884;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
+.cbt{flex:1}.cbt .t1{font-size:14px;font-weight:500;color:#e9edef}.cbt .t2{font-size:12px;color:#b2dfdb;margin-top:2px}
+#wst{font-size:11px;padding:2px 8px;border-radius:10px;background:#2a3942;color:#8696a0;white-space:nowrap}
+#wst.on{background:#063d29;color:#00a884}
+#cl{flex:1;overflow-y:auto}
+#cl::-webkit-scrollbar{width:5px}
+#cl::-webkit-scrollbar-thumb{background:#2a3942;border-radius:3px}
+.cv{display:flex;align-items:center;padding:10px 16px;cursor:pointer;border-bottom:1px solid #1f2c34;gap:12px;min-height:72px;transition:background .15s}
+.cv:hover,.cv.active{background:#2a3942}
+.av{width:49px;height:49px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;flex-shrink:0;color:#fff}
+.cb{flex:1;min-width:0}
+.r1{display:flex;justify-content:space-between;align-items:center;margin-bottom:3px}
+.nm{font-size:16px;color:#e9edef;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;max-width:230px}
+.ts{font-size:12px;color:#8696a0;flex-shrink:0;margin-left:6px}
+.r2{display:flex;justify-content:space-between;align-items:center;gap:6px}
+.pv{font-size:13px;color:#8696a0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1}
+.bd{background:#00a884;color:#111b21;border-radius:50%;min-width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;padding:0 4px;flex-shrink:0}
+#main{flex:1;display:flex;flex-direction:column;background:#0b141a;min-width:0}
+.mh{background:#202c33;padding:10px 16px;display:flex;align-items:center;gap:12px;height:60px;flex-shrink:0}
+.mhav{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:#fff;flex-shrink:0}
+.mi{flex:1;min-width:0}
+#mn{font-size:16px;font-weight:600;color:#e9edef}
+#ms{font-size:13px;color:#8696a0;margin-top:1px}
+#bg{flex:1;overflow-y:auto;padding:12px 7%}
+#bg::-webkit-scrollbar{width:5px}
+#bg::-webkit-scrollbar-thumb{background:#2a3942;border-radius:3px}
+.dv{text-align:center;margin:14px 0}
+.dv span{background:#182229;color:#8696a0;font-size:12px;padding:5px 12px;border-radius:8px}
+.mw{display:flex;margin-bottom:3px}
+.mw.o{justify-content:flex-end}
+.bl{max-width:65%;padding:7px 12px 6px;border-radius:8px;font-size:14.2px;line-height:1.45;word-break:break-word}
+.bl.o{background:#005c4b;border-top-right-radius:2px}
+.bl.i{background:#202c33;border-top-left-radius:2px}
+.bt{display:flex;align-items:center;justify-content:flex-end;gap:3px;margin-top:3px}
+.bts{font-size:11px;color:rgba(233,237,239,.55)}
+.btk{font-size:14px;color:#53bdeb}
+.tyd{display:flex;gap:4px;padding:5px 2px}
+.tyd span{width:7px;height:7px;background:#8696a0;border-radius:50%;animation:bounce 1.2s infinite}
+.tyd span:nth-child(2){animation-delay:.2s}
+.tyd span:nth-child(3){animation-delay:.4s}
+@keyframes bounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-8px)}}
+.ft{background:#202c33;padding:8px 14px;display:flex;align-items:flex-end;gap:8px;flex-shrink:0;min-height:62px}
+#fi{flex:1;background:#2a3942;border:none;border-radius:9px;padding:10px 14px;color:#e9edef;font-size:14px;outline:none;resize:none;font-family:inherit;max-height:130px;min-height:42px;line-height:1.5}
+#fi::placeholder{color:#8696a0}
+#fs{background:#00a884;border:none;border-radius:50%;width:50px;height:50px;cursor:pointer;color:#fff;font-size:22px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+#fs:hover{background:#06cf9c}
+#fs:disabled{background:#2a3942;cursor:not-allowed}
+#es{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;color:#8696a0}
+#es .el{font-size:88px;opacity:.1}
+#es h3{font-size:24px;color:#e9edef;font-weight:300}
+#es p{font-size:14px;text-align:center;max-width:300px;line-height:1.7}
+#qo{position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:999;display:none;align-items:center;justify-content:center}
+#qb{background:#202c33;border-radius:14px;padding:30px;width:340px;text-align:center}
+#qb h3{font-size:19px;font-weight:600;margin-bottom:6px;color:#e9edef}
+#qb p{color:#8696a0;font-size:13px;margin-bottom:22px;line-height:1.6}
+#qf{width:250px;height:250px;background:#fff;border-radius:10px;margin:0 auto;display:flex;align-items:center;justify-content:center;overflow:hidden}
+#qf img{width:100%;height:100%;object-fit:contain}
+#qst{margin-top:14px;font-size:13px;color:#8696a0;min-height:20px}
+.qa{display:flex;gap:8px;margin-top:20px;justify-content:flex-end}
+.qc{background:#2a3942;color:#e9edef;border:none;padding:9px 18px;border-radius:8px;cursor:pointer;font-size:13px}
+.qc:hover{background:#374248}
+.qg{background:#00a884;color:#fff;border:none;padding:9px 18px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600}
+.qg:hover{background:#06cf9c;color:#111}
+.steps{margin-top:18px;text-align:left;background:#2a3942;border-radius:8px;padding:12px 16px}
+.steps p{font-size:12px;font-weight:600;color:#e9edef;margin-bottom:6px}
+.steps ol{font-size:12px;color:#aebac1;padding-left:16px;line-height:1.9}
+</style>
+</head>
+<body>
+<div id="sb">
+  <div class="sh">
+    <h2>&#129302; Agente Creator</h2>
+    <div style="display:flex;gap:2px">
+      <button class="ic" onclick="novaC()" title="Nova conversa">&#9998;</button>
+      <button class="ic">&#8942;</button>
+    </div>
+  </div>
+  <div class="sr">
+    <div class="si">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="#8696a0"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+      <input type="text" placeholder="Pesquisar ou iniciar nova conversa" oninput="filtrar(this.value)">
+    </div>
+  </div>
+  <div id="cbar" onclick="abrirQR()">
+    <div class="cba">&#128241;</div>
+    <div class="cbt"><div class="t1">Conectar WhatsApp</div><div class="t2">Clique para escanear o QR Code</div></div>
+    <div id="wst">Desconectado</div>
+  </div>
+  <div id="cl"></div>
+</div>
+<div id="main">
+  <div id="es">
+    <div class="el">&#129302;</div>
+    <h3>Agente Creator</h3>
+    <p>Selecione uma conversa ou clique em &#9998; para criar uma nova</p>
+  </div>
+</div>
+<div id="qo">
+  <div id="qb">
+    <h3>Conectar ao WhatsApp</h3>
+    <p>Use o WhatsApp no celular para escanear o QR Code</p>
+    <div id="qf"><div id="qpl" style="color:#aaa;font-size:13px;padding:20px">Clique em Gerar QR</div></div>
+    <div id="qst"></div>
+    <div class="steps"><p>Como conectar:</p><ol><li>Abra o WhatsApp no celular</li><li>Toque em Dispositivos conectados</li><li>Toque em Conectar um dispositivo</li><li>Aponte a camera para este QR Code</li></ol></div>
+    <div class="qa">
+      <button class="qc" onclick="fecharQR()">Cancelar</button>
+      <button class="qg" onclick="gerarQR()">&#128247; Gerar QR Code</button>
+    </div>
+  </div>
+</div>
+<script>
+var cur=null,ch={},no={},qi=null;
+var CL=['#1d3557','#2d6a4f','#6a0572','#3a86ff','#c77dff','#e07b39','#2a9d8f','#d62828'];
+function h(){return new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});}
+function av(n){return n.split(' ').map(function(w){return w[0]||'';}).join('').substring(0,2).toUpperCase();}
+function cr(n){return CL[n.charCodeAt(0)%CL.length];}
+function pc(el){var r=el.getBoundingClientRect(),x=r.left+r.width/2,y=r.top+r.height/2;['pointerdown','mousedown','mouseup','click','pointerup'].forEach(function(ev){el.dispatchEvent(new (ev.startsWith('pointer')?PointerEvent:MouseEvent)(ev,{bubbles:true,cancelable:true,clientX:x,clientY:y,view:window}));});}
+function addC(id,nm,pv,ts,bd){
+  if(document.getElementById('c-'+id))return;
+  var d=document.createElement('div');
+  d.className='cv';d.id='c-'+id;
+  d.innerHTML='<div class="av" style="background:'+cr(nm)+'">'+av(nm)+'</div><div class="cb"><div class="r1"><span class="nm">'+nm+'</span><span class="ts">'+ts+'</span></div><div class="r2"><span class="pv">'+pv+'</span>'+(bd?'<div class="bd">'+bd+'</div>':'')+'</div></div>';
+  d.onclick=function(){sel(id,nm);};
+  document.getElementById('cl').insertBefore(d,document.getElementById('cl').firstChild);
+}
+function sel(id,nm){
+  cur=id;if(!ch[id])ch[id]=[];
+  document.querySelectorAll('.cv').forEach(function(e){e.classList.remove('active');});
+  var el=document.getElementById('c-'+id);
+  if(el){el.classList.add('active');var b=el.querySelector('.bd');if(b)b.remove();}
+  renderM(id,nm);
+}
+function renderM(id,nm){
+  var m=document.getElementById('main'),c=cr(nm),a=av(nm);
+  m.innerHTML='<div class="mh"><div class="mhav" style="background:'+c+'">'+a+'</div><div class="mi"><div id="mn">'+nm+'</div><div id="ms">online</div></div><div style="display:flex;gap:2px"><button class="ic">&#128269;</button><button class="ic">&#8942;</button></div></div><div id="bg"></div><div class="ft"><button class="ic" style="color:#8696a0;font-size:22px">&#128512;</button><textarea id="fi" placeholder="Digite uma mensagem" rows="1"></textarea><button id="fs" onclick="env()"><svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg></button></div>';
+  document.getElementById('fi').addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();env();}});
+  document.getElementById('fi').addEventListener('input',function(){this.style.height='auto';this.style.height=Math.min(this.scrollHeight,130)+'px';});
+  renderBs(id);
+}
+function renderBs(id){
+  var bg=document.getElementById('bg');if(!bg)return;
+  bg.innerHTML='<div class="dv"><span>HOJE</span></div>';
+  (ch[id]||[]).forEach(function(m){addB(m,bg);});
+  bg.scrollTop=bg.scrollHeight;
+}
+function addB(m,bg){
+  if(!bg)return;
+  var d=document.createElement('div');d.className='mw '+(m.r==='u'?'o':'');
+  var t=(m.t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  var tk=m.r==='u'?'<span class="btk">&#10003;&#10003;</span>':'';
+  d.innerHTML='<div class="bl '+(m.r==='u'?'o':'i')+'">'+t+'<div class="bt"><span class="bts">'+m.ts+'</span>'+tk+'</div></div>';
+  bg.appendChild(d);
+}
+function updP(id,t){
+  var el=document.getElementById('c-'+id);if(!el)return;
+  var p=el.querySelector('.pv');if(p)p.textContent=t.substring(0,46);
+  var ts=el.querySelector('.ts');if(ts)ts.textContent=h();
+  document.getElementById('cl').insertBefore(el,document.getElementById('cl').firstChild);
+}
+function ty(){
+  var bg=document.getElementById('bg');if(!bg)return null;
+  var d=document.createElement('div');d.className='mw';d.id='ty';
+  d.innerHTML='<div class="bl i"><div class="tyd"><span></span><span></span><span></span></div></div>';
+  bg.appendChild(d);bg.scrollTop=bg.scrollHeight;return d;
+}
+function env(){
+  var fi=document.getElementById('fi');if(!fi||!cur)return;
+  var t=fi.value.trim();if(!t)return;
+  fi.value='';fi.style.height='auto';
+  var m={r:'u',t:t,ts:h()};ch[cur].push(m);
+  var bg=document.getElementById('bg');addB(m,bg);if(bg)bg.scrollTop=bg.scrollHeight;
+  updP(cur,t);
+  var fs=document.getElementById('fs');if(fs)fs.disabled=true;
+  var td=ty();
+  var msgs=ch[cur].map(function(x){return{role:x.r==='u'?'user':'assistant',content:x.t};});
+  fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:msgs})})
+    .then(function(r){return r.json();})
+    .then(function(d){
+      if(td)td.remove();
+      var rep=d.reply||d.error||'Erro';
+      var rm={r:'a',t:rep,ts:h()};ch[cur].push(rm);
+      addB(rm,document.getElementById('bg'));
+      var bg2=document.getElementById('bg');if(bg2)bg2.scrollTop=bg2.scrollHeight;
+      updP(cur,rep);if(fs)fs.disabled=false;
+    })
+    .catch(function(e){
+      if(td)td.remove();
+      var em={r:'a',t:'Erro: '+e.message,ts:h()};ch[cur].push(em);
+      addB(em,document.getElementById('bg'));if(fs)fs.disabled=false;
+    });
+}
+function novaC(){
+  var nm=prompt('Nome do contato:');if(!nm||!nm.trim())return;
+  nm=nm.trim();var id='c'+Date.now();
+  ch[id]=[{r:'a',t:'Ola, '+nm+'! Sou o Agente Creator com IA. Como posso ajudar?',ts:h()}];
+  addC(id,nm,'Ola, '+nm+'!',h(),'');sel(id,nm);
+}
+function filtrar(q){
+  document.querySelectorAll('.cv').forEach(function(el){
+    var n=el.querySelector('.nm');
+    el.style.display=(!q||(n&&n.textContent.toLowerCase().includes(q.toLowerCase())))?'':'none';
+  });
+}
+function abrirQR(){document.getElementById('qo').style.display='flex';}
+function fecharQR(){document.getElementById('qo').style.display='none';if(qi){clearInterval(qi);qi=null;}}
+function gerarQR(){
+  document.getElementById('qst').textContent='Criando instancia...';
+  document.getElementById('qf').innerHTML='<div style="color:#aaa;font-size:13px;padding:20px">Aguardando QR Code...</div>';
+  fetch('/instancia/criar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nome:'agente1'})})
+    .then(function(r){return r.json();})
+    .then(function(d){
+      if(d.ok){document.getElementById('qst').textContent='Aguardando QR Code...';if(qi)clearInterval(qi);qi=setInterval(pollQR,2000);}
+      else document.getElementById('qst').textContent='Erro: '+(d.error||'?');
+    }).catch(function(e){document.getElementById('qst').textContent='Erro: '+e.message;});
+}
+function pollQR(){
+  fetch('/qr/agente1').then(function(r){return r.json();}).then(function(d){
+    if(d.status==='connected'){
+      clearInterval(qi);qi=null;fecharQR();
+      document.getElementById('wst').textContent='Conectado';
+      document.getElementById('wst').className='on';
+      document.querySelector('.cbt .t1').textContent='WhatsApp Conectado';
+      document.querySelector('.cbt .t2').textContent='Agente respondendo automaticamente';
+      document.getElementById('cbar').style.background='#1d4e3a';
+    } else if(d.base64){
+      var src=d.base64.startsWith('data:')?d.base64:'data:image/png;base64,'+d.base64;
+      document.getElementById('qf').innerHTML='<img src="'+src+'" alt="QR Code">';
+      document.getElementById('qst').textContent='Escaneie agora com seu WhatsApp!';
+    }
+  }).catch(function(){});
+}
+var demos=[
+  {id:'d1',n:'Maria Silva',p:'Oi! Quero saber sobre os planos',bd:'3'},
+  {id:'d2',n:'Joao Santos',p:'Qual o horario de atendimento?',bd:'1'},
+  {id:'d3',n:'Ana Lima',p:'Obrigada pelo atendimento!',bd:''},
+  {id:'d4',n:'Pedro Costa',p:'Preciso de ajuda com meu pedido',bd:'5'},
+  {id:'d5',n:'Juliana Ferreira',p:'Voce pode me ajudar?',bd:'2'}
+];
+demos.forEach(function(d,i){
+  var t='09:3'+i;
+  ch[d.id]=[{r:'a',t:'Ola, '+d.n.split(' ')[0]+'! Sou o Agente Creator. Como posso ajudar?',ts:t},{r:'u',t:d.p,ts:t}];
+  addC(d.id,d.n,d.p,h(),d.bd||'');
+});
+sel('d1','Maria Silva');
+</script>
+</body>
+</html>
