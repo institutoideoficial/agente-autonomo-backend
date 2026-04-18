@@ -1,170 +1,51 @@
-const express = require('express');
-const axios = require('axios');
-const cors = require('cors');
-const path = require('path');
-const app = express();
+const express=require('express'),axios=require('axios'),cors=require('cors'),path=require('path'),app=express();
 app.use(cors());
-app.use(express.json({ limit: '10mb' }));
-app.use(express.static(path.join(__dirname, 'public')));
-
-const OPENAI_KEY = process.env.OPENAI_API_KEY;
-const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
-const EVO = (process.env.EVOLUTION_URL || 'https://evolution-api-production-a3c7.up.railway.app').replace(/\/+$/, '');
-const EVO_KEY = process.env.EVOLUTION_KEY || 'agentecreator123';
-const SERVER_URL = (process.env.SERVER_URL || 'https://agente-autonomo-production-cb49.up.railway.app').replace(/\/+$/, '');
-const INST = 'agente1';
-
-const connStore = {};
-const historico = {};
-
-async function chamarIA(messages, system) {
-  if (ANTHROPIC_KEY) {
-    const r = await axios.post('https://api.anthropic.com/v1/messages', {
-      model: 'claude-opus-4-6', max_tokens: 1000, system, messages
-    }, { headers: { 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' } });
-    return r.data.content[0].text;
+app.use(express.json({limit:'10mb'}));
+app.use(express.static(path.join(__dirname,'public'),{setHeaders:(res,p)=>{if(p.endsWith('.html'))res.setHeader('Content-Type','text/html; charset=utf-8');}}));
+const EVO=(process.env.EVOLUTION_URL||'https://evolution-api-production-a3c7.up.railway.app').replace(/\/+$/,'');
+const EVO_KEY=process.env.EVOLUTION_KEY||'agentecreator123';
+const SERVER_URL=(process.env.SERVER_URL||'https://agente-autonomo-production-cb49.up.railway.app').replace(/\/+$/,'');
+const ANTHROPIC_KEY=process.env.ANTHROPIC_API_KEY;
+const sseClients=[];
+app.post('/webhook/whatsapp',async(req,res)=>{
+  try{const body=req.body,event=body.event||body.type,data=body.data||body;
+  if(event==='messages.upsert'||event==='MESSAGES_UPSERT'){
+    const msg=data.messages?.[0]||data.message||data;
+    const from=msg.key?.remoteJid||msg.from||'';
+    const text=msg.message?.conversation||msg.message?.extendedTextMessage?.text||msg.text||'';
+    if(!msg.key?.fromMe&&from&&text)broadcastEvent('new_message',{from,text,timestamp:new Date().toISOString(),instance:data.instance||'default'});
   }
-  const msgs = system ? [{ role: 'system', content: system }, ...messages] : messages;
-  const r = await axios.post('https://api.openai.com/v1/chat/completions', {
-    model: 'gpt-4o-mini', max_tokens: 1000, messages: msgs
-  }, { headers: { Authorization: 'Bearer ' + OPENAI_KEY, 'content-type': 'application/json' } });
-  return r.data.choices[0].message.content;
-}
-
-app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
-
-app.post('/chat', async (req, res) => {
-  try {
-    const reply = await chamarIA(req.body.messages || [],
-      req.body.system || 'Voce e um assistente autonomo chamado Agente Creator. Responda em portugues.');
-    res.json({ reply });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  res.json({status:'ok'});}catch(e){res.status(500).json({error:e.message});}
 });
-
-app.get('/qr/:inst', async (req, res) => {
-  const inst = req.params.inst;
-  if (connStore[inst] === 'connected') return res.json({ status: 'connected' });
-  try {
-    const r = await axios.get(EVO + '/instance/connectionState/' + inst, {
-      headers: { apikey: EVO_KEY }, timeout: 5000
-    });
-    const state = r.data && r.data.instance && r.data.instance.state;
-    if (state === 'open') { connStore[inst] = 'connected'; return res.json({ status: 'connected' }); }
-    res.json({ status: state || 'waiting' });
-  } catch (e) { res.json({ status: 'waiting' }); }
+app.get('/events',(req,res)=>{
+  res.setHeader('Content-Type','text/event-stream');
+  res.setHeader('Cache-Control','no-cache');
+  res.setHeader('Connection','keep-alive');
+  res.setHeader('Access-Control-Allow-Origin','*');
+  res.write('data: {"type":"connected"}\n\n');
+  const c={res};sseClients.push(c);
+  req.on('close',()=>{const i=sseClients.indexOf(c);if(i!==-1)sseClients.splice(i,1);});
 });
-
-// PAIRING CODE - endpoint correto Evolution API v2
-// Criar instancia com number -> GET /instance/connect retorna pairingCode
-app.post('/pairing-code', async (req, res) => {
-  const phone = String(req.body.phone || '').replace(/\D/g, '');
-  if (!phone || phone.length < 10) return res.status(400).json({ error: 'Numero invalido. Exemplo: 5511999999999' });
-
-  try {
-    // Limpar instancia antiga
-    try { await axios.delete(EVO + '/instance/logout/' + INST, { headers: { apikey: EVO_KEY } }); } catch(e) {}
-    await new Promise(r => setTimeout(r, 500));
-    try { await axios.delete(EVO + '/instance/delete/' + INST, { headers: { apikey: EVO_KEY } }); } catch(e) {}
-    await new Promise(r => setTimeout(r, 1000));
-
-    // Criar instancia com number (habilita pairing code automaticamente)
-    const criar = await axios.post(EVO + '/instance/create', {
-      instanceName: INST,
-      number: phone,
-      qrcode: false,
-      integration: 'WHATSAPP-BAILEYS'
-    }, { headers: { apikey: EVO_KEY } });
-    console.log('[Criar]', JSON.stringify(criar.data).substring(0, 200));
-
-    await new Promise(r => setTimeout(r, 3000));
-
-    // Configurar webhook
-    try {
-      await axios.post(EVO + '/webhook/set/' + INST, {
-        webhook: {
-          enabled: true,
-          url: SERVER_URL + '/webhook/evolution',
-          webhookByEvents: false,
-          webhookBase64: true,
-          events: ['MESSAGES_UPSERT', 'CONNECTION_UPDATE']
-        }
-      }, { headers: { apikey: EVO_KEY } });
-    } catch(e) { console.log('[Webhook err]', e.message); }
-
-    // GET /instance/connect/{name} - retorna pairingCode quando criado com number
-    let pairingCode = null;
-    for (let i = 0; i < 6; i++) {
-      try {
-        const conn = await axios.get(EVO + '/instance/connect/' + INST, {
-          headers: { apikey: EVO_KEY }, timeout: 10000
-        });
-        console.log('[Connect', i, ']', JSON.stringify(conn.data).substring(0, 150));
-        pairingCode = conn.data && (conn.data.pairingCode || conn.data.code);
-        if (pairingCode) break;
-      } catch(e) { console.log('[Connect err]', e.message); }
-      await new Promise(r => setTimeout(r, 2000));
-    }
-
-    if (pairingCode) {
-      connStore[INST] = 'pairing';
-      return res.json({ code: pairingCode });
-    }
-
-    // Se pairingCode nao veio, tentar via endpoint alternativo
-    try {
-      const alt = await axios.post(EVO + '/instance/connect/' + INST,
-        { number: phone },
-        { headers: { apikey: EVO_KEY }, timeout: 10000 }
-      );
-      console.log('[AltConnect]', JSON.stringify(alt.data).substring(0, 150));
-      pairingCode = alt.data && (alt.data.pairingCode || alt.data.code);
-      if (pairingCode) {
-        connStore[INST] = 'pairing';
-        return res.json({ code: pairingCode });
-      }
-    } catch(e) { console.log('[AltConnect err]', e.message); }
-
-    res.status(500).json({ 
-      error: 'Codigo nao gerado. A Evolution API no Railway bloqueia WebSocket para WhatsApp. Configure o VPS para resolver.'
-    });
-
-  } catch (err) {
-    console.error('[PairingCode err]', err.response ? JSON.stringify(err.response.data) : err.message);
-    res.status(500).json({ error: err.response ? JSON.stringify(err.response.data) : err.message });
-  }
+function broadcastEvent(type,data){const p=JSON.stringify({type,data});sseClients.forEach(c=>{try{c.res.write('data: '+p+'\n\n');}catch(e){}});}
+app.post('/api/send',async(req,res)=>{
+  try{const{instance,phone,message}=req.body;
+  const r=await axios.post(EVO+'/message/sendText/'+instance,{number:phone,textMessage:{text:message}},{headers:{apikey:EVO_KEY}});
+  res.json({ok:true,result:r.data});}catch(e){res.status(500).json({error:e.message});}
 });
-
-app.post('/webhook/evolution', (req, res) => {
-  const { event, instance, data } = req.body;
-  if (event === 'connection.update' && data && (data.state === 'open' || data.status === 'open')) {
-    connStore[instance] = 'connected';
-    console.log('[CONECTADO]', instance);
-  }
-  if (event === 'messages.upsert') {
-    const msg = data && data.messages && data.messages[0];
-    if (!msg || msg.key.fromMe) return res.sendStatus(200);
-    const numero = msg.key.remoteJid;
-    const texto = msg.message && (
-      msg.message.conversation ||
-      (msg.message.extendedTextMessage && msg.message.extendedTextMessage.text)
-    );
-    if (texto && numero) responder(instance, numero, texto);
-  }
-  res.sendStatus(200);
+app.post('/api/pairing-code',async(req,res)=>{
+  try{const{phone,instance}=req.body,inst=instance||'speakers-crm';
+  try{await axios.post(EVO+'/instance/create',{instanceName:inst,qrcode:false,integration:'WHATSAPP-BAILEYS'},{headers:{apikey:EVO_KEY}});}catch(e){}
+  try{await axios.post(EVO+'/webhook/set/'+inst,{webhook:{enabled:true,url:SERVER_URL+'/webhook/whatsapp',events:['MESSAGES_UPSERT']}},{headers:{apikey:EVO_KEY}});}catch(e){}
+  const r=await axios.post(EVO+'/instance/pairingCode/'+inst,{number:phone.replace(/\D/g,'')},{headers:{apikey:EVO_KEY}});
+  res.json({ok:true,code:r.data.code||r.data.pairingCode});}catch(e){res.status(500).json({error:e.response?.data?.message||e.message});}
 });
-
-async function responder(inst, numero, texto) {
-  try {
-    if (!historico[numero]) historico[numero] = [];
-    historico[numero].push({ role: 'user', content: texto });
-    const reply = await chamarIA(historico[numero].slice(-10),
-      'Voce e um assistente autonomo chamado Agente Creator. Responda em portugues de forma util e direta.');
-    historico[numero].push({ role: 'assistant', content: reply });
-    await axios.post(EVO + '/message/sendText/' + inst,
-      { number: numero, text: reply },
-      { headers: { apikey: EVO_KEY } });
-  } catch (err) { console.error('[Responder]', err.message); }
-}
-
-const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => console.log('[Agente Creator v12] Porta', PORT));
+app.get('/api/status/:instance',async(req,res)=>{
+  try{const r=await axios.get(EVO+'/instance/connectionState/'+req.params.instance,{headers:{apikey:EVO_KEY}});res.json(r.data);}catch(e){res.status(500).json({error:e.message});}
+});
+app.post('/api/bot',async(req,res)=>{
+  try{const{messages,context}=req.body;
+  const r=await axios.post('https://api.anthropic.com/v1/messages',{model:'claude-haiku-4-5-20251001',max_tokens:300,system:'Atendente do '+(context||'Speakers Play')+'. Breve e profissional em portugues.',messages},{headers:{'x-api-key':ANTHROPIC_KEY,'anthropic-version':'2023-06-01'}});
+  res.json({reply:r.data.content[0].text});}catch(e){res.status(500).json({error:e.message});}
+});
+app.get('/health',(req,res)=>res.json({ok:true,uptime:process.uptime()}));
+const PORT=process.env.PORT||3000;app.listen(PORT,()=>console.log('SPEAKERS CRM porta '+PORT));
