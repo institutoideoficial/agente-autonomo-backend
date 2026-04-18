@@ -623,7 +623,6 @@ function gerarCod(){var ph=document.getElementById("ph").value.replace(/\D/g,"")
       btn.disabled=false;btn.textContent='Tentar novamente';
       document.getElementById('pst').textContent='Erro: '+e.message;
     });
-}
 
 function checkConn(){
   fetch('/qr/agente1').then(function(r){return r.json();}).then(function(d){
