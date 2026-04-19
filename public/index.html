@@ -199,16 +199,16 @@ body{background:var(--bg);color:var(--text);height:100vh;display:flex;overflow:h
       <div class="sb-logo-name">SPEAKERS<span class="sb-logo-badge">CRM</span></div>
     </div>
     <div style="display:flex;gap:1px">
-      <button class="ic" onclick="openModal('mnew')" title="Nova conversa">â</button>
+      <button class="ic" onclick="openModal('mnew')" title="Nova conversa"></button>
       <button class="ic" onclick="openModal('mconn')" title="WhatsApp">ð±</button>
-      <button class="ic">â®</button>
+      <button class="ic">®</button>
     </div>
   </div>
   <div class="conn-bar" id="conn-bar" onclick="openModal('mconn')">
     <div class="cb-dot" id="cb-dot"></div>
     <div class="cb-tx">
       <div class="cb-t1" id="cb-t1">Conectar WhatsApp</div>
-      <div class="cb-t2" id="cb-t2">Clique para vincular seu numero</div>
+      <div class="cb-t2" id="cb-t2">Clique para vincular seu número</div>
     </div>
     <div id="wst">Desconectado</div>
   </div>
@@ -238,7 +238,7 @@ body{background:var(--bg);color:var(--text);height:100vh;display:flex;overflow:h
   <div id="es">
     <div class="es-logo">SP</div>
     <h3>SPEAKERS CRM</h3>
-    <p>Selecione uma conversa ou crie uma nova</p>
+    <p>Selecione uma conversa ou crie uma nova.</p>
   </div>
 </div>
 
@@ -252,7 +252,7 @@ body{background:var(--bg);color:var(--text);height:100vh;display:flex;overflow:h
   </div>
   <div class="rps">
     <div class="rpt">AÃÃES</div>
-    <button class="actb res" onclick="resolverConv()">â Resolver</button>
+    <button class="actb res" onclick="resolverConv()"> Resolver</button>
     <button class="actb trf" onclick="openModal('mtrf')">â¡ Transferir</button>
     <button class="actb bot" id="btn-bot" onclick="toggleBot()">ð¤ Ativar Bot</button>
   </div>
@@ -270,7 +270,7 @@ body{background:var(--bg);color:var(--text);height:100vh;display:flex;overflow:h
   </div>
   <div class="rps">
     <div class="rpt">NOTA INTERNA</div>
-    <textarea class="ni" id="ni" placeholder="Nota sobre este contato..."></textarea>
+    <textarea class="ni" id="ni" placeholder="Nota sobre este contato......"></textarea>
     <button class="snb" onclick="salvarNota()">ð¾ Salvar</button>
   </div>
   <div class="rps">
@@ -290,7 +290,7 @@ body{background:var(--bg);color:var(--text);height:100vh;display:flex;overflow:h
 <div class="mbg" id="mconn">
   <div class="modal">
     <h3>ð± Conectar WhatsApp</h3>
-    <p>Digite seu numero com DDI para receber um codigo de 8 digitos no WhatsApp</p>
+    <p>Digite seu número com DDI para receber um código de 8 dígitos no WhatsApp</p>
     <div style="display:flex;gap:7px;margin-bottom:4px">
       <input type="tel" id="ph" class="mi" style="margin:0;flex:1" placeholder="5511999999999">
       <button class="bok" id="bpair" onclick="gerarCod()">Conectar</button>
@@ -358,7 +358,7 @@ var QRS=[
 ];
 var convs={
   d1:{id:'d1',nm:'Carlos Mendez',ph:'5511911111111',dept:'Vendas',st:'open',tag:'venda',ag:'bot',msgs:[{r:'a',t:'Ola, Carlos! Como posso ajudar?',ts:'09:30'},{r:'u',t:'Quero saber sobre o programa Speakers Play',ts:'09:31'}],nota:''},
-  d2:{id:'d2',nm:'Ana Lima',ph:'5511922222222',dept:'Suporte',st:'open',tag:'suporte',ag:'thiago',msgs:[{r:'a',t:'Ola, Ana! Como posso ajudar?',ts:'09:15'},{r:'u',t:'Qual o horario da imersao presencial?',ts:'09:16'}],nota:''},
+  d2:{id:'d2',nm:'Ana Lima',ph:'5511922222222',dept:'Suporte',st:'open',tag:'suporte',ag:'thiago',msgs:[{r:'a',t:'Ola, Ana! Como posso ajudar?',ts:'09:15'},{r:'u',t:'Qual o horario da imersão presencial?',ts:'09:16'}],nota:''},
   d3:{id:'d3',nm:'Roberto Faria',ph:'5511933333333',dept:'Vendas',st:'resolved',tag:'venda',ag:'bot',msgs:[{r:'a',t:'Ola, Roberto! Como posso ajudar?',ts:'08:50'},{r:'u',t:'Obrigado pelo atendimento!',ts:'08:55'}],nota:'Cliente VIP'},
   d4:{id:'d4',nm:'Patricia Souza',ph:'5511944444444',dept:'Suporte',st:'pending',tag:'urgente',ag:'vanessa',msgs:[{r:'a',t:'Ola, Patricia! Como posso ajudar?',ts:'08:30'},{r:'u',t:'Preciso de ajuda urgente!',ts:'08:32'}],nota:'Pedido atrasado'},
   d5:{id:'d5',nm:'Marcos Oliveira',ph:'5511955555555',dept:'Marketing',st:'bot',tag:'lead',ag:'bot',msgs:[{r:'a',t:'Ola, Marcos! Como posso ajudar?',ts:'08:00'},{r:'u',t:'Vi o anuncio do Speakers Play',ts:'08:01'}],nota:''}
@@ -439,10 +439,10 @@ function renderChat(id){
   main.innerHTML='<div class="ch-hd"><div class="ch-av" style="background:'+col+'">'+a+'</div>'+
     '<div class="ch-inf"><div id="ch-nm">'+esc(c.nm)+'</div><div id="ch-sb">'+c.dept+' &bull; '+(stl[c.st]||c.st)+' &bull; '+(AGENTES[c.ag]||c.ag)+'</div></div>'+
     '<div style="display:flex;gap:2px">'+
-    '<button class="ic" onclick="resolverConv()" title="Resolver">â</button>'+
+    '<button class="ic" onclick="resolverConv()" title="Resolver"></button>'+
     '<button class="ic" onclick="toggleBot()" title="Bot">ð¤</button>'+
     '<button class="ic" onclick="notaRapida()" title="Nota">ð</button>'+
-    '<button class="ic">â®</button>'+
+    '<button class="ic">®</button>'+
     '</div></div>'+
     '<div id="msgs"></div>'+
     '<div class="ch-ft"><div class="ft-acts">'+
@@ -473,7 +473,7 @@ function addBub(m,bg){
   var d=document.createElement('div');
   d.className='mw'+(out?' out':'');
   var cls='mb '+(note?'note':out?'out':'in');
-  var tick=out?'<span class="mk">ââ</span>':'';
+  var tick=out?'<span class="mk"></span>':'';
   var pre=note?'ð ':'';
   d.innerHTML='<div class="'+cls+'">'+pre+esc(m.t)+'<div class="mm"><span class="mt">'+m.ts+'</span>'+tick+'</div></div>';
   bg.appendChild(d);
@@ -517,7 +517,7 @@ function renderRP(id){
   document.getElementById('rp-av').textContent=av(c.nm);
   document.getElementById('rp-av').style.background=cr(c.nm);
   document.getElementById('rp-nm').textContent=c.nm;
-  document.getElementById('rp-nu').textContent=c.ph?'+'+c.ph:'Sem numero';
+  document.getElementById('rp-nu').textContent=c.ph?'+'+c.ph:'Sem número';
   var stl={open:'Aberta',pending:'Pendente',resolved:'Resolvida',bot:'Bot'};
   var sp=document.getElementById('rp-st');
   sp.textContent=stl[c.st]||c.st;sp.className='spill '+c.st;
@@ -543,7 +543,7 @@ function renderRP(id){
 function resolverConv(){
   if(!cur)return;convs[cur].st='resolved';renderSB();renderRP(cur);renderChat(cur);
   var bg=document.getElementById('msgs');
-  addBub({r:'note',t:'Conversa RESOLVIDA',ts:h()},bg);if(bg)bg.scrollTop=bg.scrollHeight;
+  addBub({r:'note',t:'✔ Conversa resolvida',ts:h()},bg);if(bg)bg.scrollTop=bg.scrollHeight;
 }
 
 function toggleBot(){
@@ -564,7 +564,7 @@ function setAgente(v){if(!cur)return;convs[cur].ag=v;renderRP(cur);renderChat(cu
 function salvarNota(){
   if(!cur)return;convs[cur].nota=document.getElementById('ni').value;
   var bg=document.getElementById('msgs');
-  addBub({r:'note',t:'Nota salva',ts:h()},bg);if(bg)bg.scrollTop=bg.scrollHeight;
+  addBub({r:'note',t:'✔ Nota salva',ts:h()},bg);if(bg)bg.scrollTop=bg.scrollHeight;
 }
 
 function addTag(){
@@ -602,10 +602,10 @@ function criarConv(){
 function openModal(id){document.getElementById(id).classList.add('open');}
 function closeModal(id){document.getElementById(id).classList.remove('open');}
 
-function gerarCod(){var ph=document.getElementById("ph").value.replace(/\D/g,"");if(ph.length<10){document.getElementById("pst").textContent="Numero invalido";return;}var btn=document.getElementById("bpair");btn.disabled=true;btn.textContent="Aguarde...";fetch(apiUrl("/api/pairing-code"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({phone:ph,instance:"speakers-crm"})}).then(r=>r.json()).then(d=>{btn.disabled=false;if(d.code){document.getElementById("cbx").style.display="block";document.getElementById("ccd").textContent=d.code;document.getElementById("pst").textContent="Codigo valido!";btn.textContent="Reenviar";window._pollSt=setInterval(checkStatus,3000);}else{document.getElementById("pst").textContent="Erro: "+(d.error||"tente novamente");btn.textContent="Tentar novamente";}}).catch(e=>{btn.disabled=false;btn.textContent="Tentar novamente";document.getElementById("pst").textContent="Erro: "+e.message;});}
+function gerarCod(){var ph=document.getElementById("ph").value.replace(/\D/g,"");if(ph.length<10){document.getElementById("pst").textContent="Número inválido";return;}var btn=document.getElementById("bpair");btn.disabled=true;btn.textContent="Aguarde...";fetch(apiUrl("/api/pairing-code"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({phone:ph,instance:"speakers-crm"})}).then(r=>r.json()).then(d=>{btn.disabled=false;if(d.code){document.getElementById("cbx").style.display="block";document.getElementById("ccd").textContent=d.code;document.getElementById("pst").textContent="Código válido!";btn.textContent="Reenviar";window._pollSt=setInterval(checkStatus,3000);}else{document.getElementById("pst").textContent="Erro: "+(d.error||"tente novamente");btn.textContent="Tentar novamente";}}).catch(e=>{btn.disabled=false;btn.textContent="Tentar novamente";document.getElementById("pst").textContent="Erro: "+e.message;});}
   var btn=document.getElementById('bpair');
   btn.disabled=true;btn.textContent='Aguarde...';
-  document.getElementById('pst').textContent='Criando instancia...';
+  document.getElementById('pst').textContent='Criando instância......';
   fetch(apiUrl('/api/pairing-code'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone:ph})})
     .then(function(r){return r.json();})
     .then(function(d){
