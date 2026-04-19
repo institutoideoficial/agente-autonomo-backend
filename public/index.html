@@ -289,7 +289,7 @@ body{background:var(--bg);color:var(--text);height:100vh;display:flex;overflow:h
 <!-- MODAL CONNECT -->
 <div class="mbg" id="mconn">
   <div class="modal">
-    <h3>ð± Conectar WhatsApp</h3>
+    <h3>Conectar WhatsApp</h3>
     <p>Digite seu número com DDI para receber um código de 8 dígitos no WhatsApp</p>
     <div style="display:flex;gap:7px;margin-bottom:4px">
       <input type="tel" id="ph" class="mi" style="margin:0;flex:1" placeholder="5511999999999">
@@ -602,7 +602,7 @@ function criarConv(){
 function openModal(id){document.getElementById(id).classList.add('open');}
 function closeModal(id){document.getElementById(id).classList.remove('open');}
 
-function gerarCod(){var ph=document.getElementById("ph").value.replace(/\D/g,"");if(ph.length<10){document.getElementById("pst").textContent="Número inválido";return;}var btn=document.getElementById("bpair");btn.disabled=true;btn.textContent="Aguarde...";fetch(apiUrl("/api/pairing-code"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({phone:ph,instance:"speakers-crm"})}).then(r=>r.json()).then(d=>{btn.disabled=false;if(d.code){document.getElementById("cbx").style.display="block";document.getElementById("ccd").textContent=d.code;document.getElementById("pst").textContent="Código válido!";btn.textContent="Reenviar";window._pollSt=setInterval(checkStatus,3000);}else{document.getElementById("pst").textContent="Erro: "+(d.error||"tente novamente");btn.textContent="Tentar novamente";}}).catch(e=>{btn.disabled=false;btn.textContent="Tentar novamente";document.getElementById("pst").textContent="Erro: "+e.message;});}
+function gerarCod(){var phEl=document.getElementById("ph");var ph=(phEl&&phEl.value)?String(phEl.value).replace(/\D/g,""):"";if(ph.length<10){document.getElementById("pst").textContent="Número inválido";return;}var btn=document.getElementById("bpair");btn.disabled=true;btn.textContent="Aguarde...";fetch(apiUrl("/api/pairing-code"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({phone:ph,instance:"speakers-crm"})}).then(r=>r.json()).then(d=>{btn.disabled=false;if(d.code){document.getElementById("cbx").style.display="block";document.getElementById("ccd").textContent=d.code;document.getElementById("pst").textContent="Código válido!";btn.textContent="Reenviar";window._pollSt=setInterval(checkStatus,3000);}else{document.getElementById("pst").textContent="Erro: "+(d.error||"tente novamente");btn.textContent="Tentar novamente";}}).catch(e=>{btn.disabled=false;btn.textContent="Tentar novamente";document.getElementById("pst").textContent="Erro: "+e.message;});}
   var btn=document.getElementById('bpair');
   btn.disabled=true;btn.textContent='Aguarde...';
   document.getElementById('pst').textContent='Criando instância......';
