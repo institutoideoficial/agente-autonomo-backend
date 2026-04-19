@@ -591,7 +591,7 @@ function criarConv(){
   var nm=document.getElementById('nn').value.trim();if(!nm)return;
   var id='c'+Date.now();
   var dept=document.getElementById('nd').value;
-  var ph=document.getElementById('np').value.replace(/\D/g,'');
+  var ph=((document.getElementById('np')||{}).value||'').toString().replace(/\D/g,'');
   convs[id]={id:id,nm:nm,ph:ph,dept:dept,st:'open',tag:'',ag:'bot',msgs:[{r:'a',t:'Ola, '+nm.split(' ')[0]+'! Como posso ajudar?',ts:h()}],nota:''};
   closeModal('mnew');
   document.getElementById('nn').value='';
