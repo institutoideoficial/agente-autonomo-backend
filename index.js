@@ -11,6 +11,8 @@ const BRAVOS_URL = process.env.BRAVOS_URL || "https://bravos-whatsapp-api-produc
 const BRAVOS_TOKEN = process.env.BRAVOS_TOKEN || "sp_a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2";
 
 app.use(express.json());
+app.get("/", (req, res) => res.sendFile(path.join(__dirname, "public", "welcome.html")));
+app.get("/app", (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
 app.use(express.static(path.join(__dirname, "public")));
 
 // SSE clients
