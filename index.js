@@ -64,7 +64,7 @@ app.get("/api/status/:clientId", async (req, res) => {
     const r = await fetch(`${BRAVOS_URL}/health`);
     const data = await r.json();
     const state = data.isReady && data.isAuthenticated ? "connected" : "disconnected";
-    res.json({ state, instance: { state, ...data } });
+    res.json({ status: state, state, instance: { status: state, state, ...data } });
   } catch (e) {
     res.json({ state: "disconnected", error: e?.message });
   }
