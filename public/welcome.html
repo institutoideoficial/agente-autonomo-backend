@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SPEAKERS CRM - Bem-vinda</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  body{background:#0a0a0a;color:#fff;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+  .container{max-width:520px;width:100%}
+  .logo{text-align:center;margin-bottom:40px}
+  .logo-box{width:80px;height:80px;background:linear-gradient(135deg,#d4af37,#f4d03f);border-radius:20px;display:inline-flex;align-items:center;justify-content:center;margin-bottom:16px;box-shadow:0 10px 40px rgba(212,175,55,.3)}
+  .logo-box span{font-size:32px;font-weight:700;color:#0a0a0a}
+  h1{font-size:28px;margin-bottom:8px;font-weight:700}
+  .subtitle{color:#888;font-size:15px}
+  .card{background:#1a1a1a;border:1px solid #2a2a2a;border-radius:16px;padding:24px;margin-bottom:16px;transition:all .3s}
+  .card:hover{border-color:#3a3a3a}
+  .card.ok{border-color:#10b981}
+  .card.warn{border-color:#f59e0b}
+  .card.error{border-color:#ef4444}
+  .card-header{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+  .status-dot{width:12px;height:12px;border-radius:50%;background:#555;flex-shrink:0}
+  .status-dot.ok{background:#10b981;box-shadow:0 0 12px #10b981}
+  .status-dot.warn{background:#f59e0b;box-shadow:0 0 12px #f59e0b}
+  .status-dot.error{background:#ef4444;box-shadow:0 0 12px #ef4444}
+  .card-title{font-size:17px;font-weight:600;flex:1}
+  .badge{font-size:11px;padding:4px 10px;border-radius:20px;background:#2a2a2a;color:#aaa;text-transform:uppercase;letter-spacing:.5px;font-weight:600}
+  .badge.ok{background:#10b98133;color:#10b981}
+  .badge.warn{background:#f59e0b33;color:#f59e0b}
+  .badge.error{background:#ef444433;color:#ef4444}
+  .card-desc{color:#999;font-size:14px;margin-bottom:16px;line-height:1.5}
+  .btn{display:inline-block;padding:12px 20px;background:#d4af37;color:#0a0a0a;border:none;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;text-decoration:none;transition:all .2s}
+  .btn:hover{background:#f4d03f;transform:translateY(-1px)}
+  .btn.secondary{background:#2a2a2a;color:#fff}
+  .btn.secondary:hover{background:#3a3a3a}
+  .btn.primary-big{width:100%;padding:16px;font-size:16px;margin-top:8px}
+  .btn:disabled{opacity:.4;cursor:not-allowed}
+  input{width:100%;padding:12px 14px;background:#0f0f0f;border:1px solid #2a2a2a;border-radius:10px;color:#fff;font-size:14px;margin-bottom:12px;font-family:monospace}
+  input:focus{outline:none;border-color:#d4af37}
+  .info-line{color:#666;font-size:12px;margin-top:8px}
+  .step-num{background:#d4af37;color:#0a0a0a;width:24px;height:24px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;margin-right:8px}
+  .footer{text-align:center;margin-top:32px;color:#555;font-size:12px}
+  .spinner{display:inline-block;width:14px;height:14px;border:2px solid #333;border-top-color:#d4af37;border-radius:50%;animation:spin .8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="logo">
+    <div class="logo-box"><span>SP</span></div>
+    <h1>SPEAKERS CRM</h1>
+    <div class="subtitle">Sistema de gestao para Formacao Speakers Play</div>
+  </div>
+
+  <div class="card" id="card-wa">
+    <div class="card-header">
+      <div class="status-dot" id="dot-wa"></div>
+      <div class="card-title"><span class="step-num">1</span>Conectar WhatsApp</div>
+      <div class="badge" id="badge-wa">Verificando...</div>
+    </div>
+    <div class="card-desc" id="desc-wa">Aguarde, checando conexao com o motor Imperador...</div>
+    <a href="#" class="btn" id="btn-wa" style="display:none">Escanear QR Code</a>
+  </div>
+
+  <div class="card" id="card-bot">
+    <div class="card-header">
+      <div class="status-dot" id="dot-bot"></div>
+      <div class="card-title"><span class="step-num">2</span>Bot IA (opcional)</div>
+      <div class="badge" id="badge-bot">Opcional</div>
+    </div>
+    <div class="card-desc">Cole sua chave da Anthropic para ativar o bot de IA. Se nao quiser usar bot, pule esse passo.</div>
+    <input type="password" id="api-key" placeholder="sk-ant-api03-..." autocomplete="off">
+    <button class="btn secondary" id="btn-bot" onclick="saveKey()">Salvar Chave</button>
+    <div class="info-line">Obtenha em: console.anthropic.com/settings/keys</div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <div class="status-dot ok"></div>
+      <div class="card-title"><span class="step-num">3</span>Acessar o CRM</div>
+    </div>
+    <div class="card-desc">Tudo pronto? Clique para entrar no painel de atendimento.</div>
+    <a href="/app" class="btn primary-big">Entrar no CRM &rarr;</a>
+  </div>
+
+  <div class="footer">
+    Motor: Imperador WhatsApp API &bull; Hospedado no Railway
+  </div>
+</div>
+
+<script>
+async function checkStatus(){
+  var dot = document.getElementById('dot-wa');
+  var badge = document.getElementById('badge-wa');
+  var desc = document.getElementById('desc-wa');
+  var btn = document.getElementById('btn-wa');
+  var card = document.getElementById('card-wa');
+  try{
+    var r = await fetch('/api/status/speakers-crm');
+    var d = await r.json();
+    var conn = d.status==='connected' || d.state==='connected';
+    var hasQr = d.instance && d.instance.hasQr;
+    if(conn){
+      dot.className='status-dot ok';
+      badge.className='badge ok';
+      badge.textContent='Conectado';
+      desc.textContent='WhatsApp ativo. O motor Imperador esta online e autenticado.';
+      btn.style.display='none';
+      card.className='card ok';
+    } else if(hasQr){
+      dot.className='status-dot warn';
+      badge.className='badge warn';
+      badge.textContent='Aguardando';
+      desc.textContent='Escaneie o QR code com seu WhatsApp para conectar.';
+      btn.href='https://bravos-whatsapp-api-production.up.railway.app/';
+      btn.target='_blank';
+      btn.style.display='inline-block';
+      card.className='card warn';
+    } else {
+      dot.className='status-dot error';
+      badge.className='badge error';
+      badge.textContent='Offline';
+      desc.textContent='Motor Imperador offline. Verifique o deploy no Railway.';
+      card.className='card error';
+    }
+  } catch(e){
+    dot.className='status-dot error';
+    badge.className='badge error';
+    badge.textContent='Erro';
+    desc.textContent='Nao foi possivel contatar o servidor.';
+  }
+}
+
+function saveKey(){
+  var key = document.getElementById('api-key').value.trim();
+  var badge = document.getElementById('badge-bot');
+  var dot = document.getElementById('dot-bot');
+  if(!key){ alert('Cole sua chave Anthropic primeiro'); return; }
+  if(!key.startsWith('sk-ant-')){ alert('Chave invalida. Deve comecar com sk-ant-'); return; }
+  localStorage.setItem('anthropic_key', key);
+  dot.className='status-dot ok';
+  badge.className='badge ok';
+  badge.textContent='Salva';
+  document.getElementById('btn-bot').textContent='Chave Salva (atualizar)';
+  alert('Chave salva localmente. Voce tambem precisa adiciona-la no Railway como ANTHROPIC_API_KEY para o bot funcionar no servidor.');
+}
+
+// Auto-fill saved key
+var saved = localStorage.getItem('anthropic_key');
+if(saved){
+  document.getElementById('api-key').value = saved;
+  document.getElementById('dot-bot').className='status-dot ok';
+  document.getElementById('badge-bot').className='badge ok';
+  document.getElementById('badge-bot').textContent='Salva';
+}
+
+checkStatus();
+setInterval(checkStatus, 5000);
+</script>
+</body>
+                                                                                            </html>
