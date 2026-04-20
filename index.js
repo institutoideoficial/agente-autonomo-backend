@@ -1,51 +1,135 @@
-const express=require('express'),axios=require('axios'),cors=require('cors'),path=require('path'),app=express();
-app.use(cors());
-app.use(express.json({limit:'10mb'}));
-app.use(express.static(path.join(__dirname,'public'),{setHeaders:(res,p)=>{if(p.endsWith('.html'))res.setHeader('Content-Type','text/html; charset=utf-8');}}));
-const EVO=(process.env.EVOLUTION_URL||'https://evolution-api-production-a3c7.up.railway.app').replace(/\/+$/,'');
-const EVO_KEY=process.env.EVOLUTION_KEY||'agentecreator123';
-const SERVER_URL=(process.env.SERVER_URL||'https://agente-autonomo-production-cb49.up.railway.app').replace(/\/+$/,'');
-const ANTHROPIC_KEY=process.env.ANTHROPIC_API_KEY;
-const sseClients=[];
-app.post('/webhook/whatsapp',async(req,res)=>{
-  try{const body=req.body,event=body.event||body.type,data=body.data||body;
-  if(event==='messages.upsert'||event==='MESSAGES_UPSERT'){
-    const msg=data.messages?.[0]||data.message||data;
-    const from=msg.key?.remoteJid||msg.from||'';
-    const text=msg.message?.conversation||msg.message?.extendedTextMessage?.text||msg.text||'';
-    if(!msg.key?.fromMe&&from&&text)broadcastEvent('new_message',{from,text,timestamp:new Date().toISOString(),instance:data.instance||'default'});
+// SPEAKERS CRM Backend - integrado com Bravos WhatsApp API
+const express = require("express");
+const path = require("path");
+const Anthropic = require("@anthropic-ai/sdk");
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// Config Bravos WhatsApp API
+const BRAVOS_URL = process.env.BRAVOS_URL || "https://bravos-whatsapp-api-production.up.railway.app";
+const BRAVOS_TOKEN = process.env.BRAVOS_TOKEN || "sp_a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2";
+
+app.use(express.json());
+app.use(express.static(path.join(__dirname, "public")));
+
+// SSE clients
+const sseClients = new Set();
+
+function broadcastSSE(data) {
+  const msg = `data: ${JSON.stringify(data)}\n\n`;
+  sseClients.forEach(c => { try { c.write(msg); } catch (e) {} });
+}
+
+// Health
+app.get("/health", (req, res) => res.json({ ok: true, service: "speakers-crm-backend" }));
+
+// SSE endpoint para frontend
+app.get("/events", (req, res) => {
+  res.set({
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache",
+    "Connection": "keep-alive",
+    "Access-Control-Allow-Origin": "*"
+  });
+  res.write(":ok\n\n");
+  sseClients.add(res);
+  req.on("close", () => sseClients.delete(res));
+});
+
+// Bot IA (Anthropic)
+app.post("/api/bot", async (req, res) => {
+  try {
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) return res.status(500).json({ error: "ANTHROPIC_API_KEY nao configurada" });
+    const client = new Anthropic({ apiKey });
+    const messages = Array.isArray(req.body.messages) ? req.body.messages : [];
+    const response = await client.messages.create({
+      model: "claude-haiku-4-5",
+      max_tokens: 512,
+      system: "Voce e um assistente da Speakers Play, formacao de oratoria da Vanessa Labastie. Responda de forma clara, gentil e profissional em portugues.",
+      messages: messages.length ? messages : [{ role: "user", content: "Ola" }]
+    });
+    const reply = response.content?.[0]?.text || "Desculpe, nao consegui responder.";
+    res.json({ reply });
+  } catch (e) {
+    console.error("[bot]", e?.message);
+    res.status(500).json({ error: e?.message || "erro no bot" });
   }
-  res.json({status:'ok'});}catch(e){res.status(500).json({error:e.message});}
 });
-app.get('/events',(req,res)=>{
-  res.setHeader('Content-Type','text/event-stream');
-  res.setHeader('Cache-Control','no-cache');
-  res.setHeader('Connection','keep-alive');
-  res.setHeader('Access-Control-Allow-Origin','*');
-  res.write('data: {"type":"connected"}\n\n');
-  const c={res};sseClients.push(c);
-  req.on('close',()=>{const i=sseClients.indexOf(c);if(i!==-1)sseClients.splice(i,1);});
+
+// Status da conexao WhatsApp (Bravos)
+app.get("/api/status/:clientId", async (req, res) => {
+  try {
+    const r = await fetch(`${BRAVOS_URL}/health`);
+    const data = await r.json();
+    const state = data.isReady && data.isAuthenticated ? "connected" : "disconnected";
+    res.json({ state, instance: { state, ...data } });
+  } catch (e) {
+    res.json({ state: "disconnected", error: e?.message });
+  }
 });
-function broadcastEvent(type,data){const p=JSON.stringify({type,data});sseClients.forEach(c=>{try{c.res.write('data: '+p+'\n\n');}catch(e){}});}
-app.post('/api/send',async(req,res)=>{
-  try{const{instance,phone,message}=req.body;
-  const r=await axios.post(EVO+'/message/sendText/'+instance,{number:phone,textMessage:{text:message}},{headers:{apikey:EVO_KEY}});
-  res.json({ok:true,result:r.data});}catch(e){res.status(500).json({error:e.message});}
+
+// Enviar mensagem via Bravos
+app.post("/api/send-message", async (req, res) => {
+  try {
+    const { phone, message } = req.body;
+    if (!phone || !message) return res.status(400).json({ error: "phone e message sao obrigatorios" });
+    const clean = String(phone).replace(/\D/g, "");
+    const chatId = clean.includes("@") ? clean : `${clean}@c.us`;
+    const r = await fetch(`${BRAVOS_URL}/send-message`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${BRAVOS_TOKEN}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ chatId, message: String(message) })
+    });
+    const data = await r.json();
+    res.status(r.status).json(data);
+  } catch (e) {
+    res.status(500).json({ error: e?.message });
+  }
 });
-app.post('/api/pairing-code',async(req,res)=>{
-  try{const{phone,instance}=req.body,inst=instance||'speakers-crm';
-  try{await axios.post(EVO+'/instance/create',{instanceName:inst,qrcode:false,integration:'WHATSAPP-BAILEYS'},{headers:{apikey:EVO_KEY}});}catch(e){}
-  try{await axios.post(EVO+'/webhook/set/'+inst,{webhook:{enabled:true,url:SERVER_URL+'/webhook/whatsapp',events:['MESSAGES_UPSERT']}},{headers:{apikey:EVO_KEY}});}catch(e){}
-  const r=await axios.post(EVO+'/instance/pairingCode/'+inst,{number:phone.replace(/\D/g,'')},{headers:{apikey:EVO_KEY}});
-  res.json({ok:true,code:r.data.code||r.data.pairingCode});}catch(e){res.status(500).json({error:e.response?.data?.message||e.message});}
+
+// Historico de conversa
+app.get("/api/history", async (req, res) => {
+  try {
+    const { chatId, limit = 50 } = req.query;
+    if (!chatId) return res.status(400).json({ error: "chatId obrigatorio" });
+    const r = await fetch(`${BRAVOS_URL}/history?chatId=${encodeURIComponent(chatId)}&limit=${limit}`, {
+      headers: { "Authorization": `Bearer ${BRAVOS_TOKEN}` }
+    });
+    const data = await r.json();
+    res.status(r.status).json(data);
+  } catch (e) {
+    res.status(500).json({ error: e?.message });
+  }
 });
-app.get('/api/status/:instance',async(req,res)=>{
-  try{const r=await axios.get(EVO+'/instance/connectionState/'+req.params.instance,{headers:{apikey:EVO_KEY}});res.json(r.data);}catch(e){res.status(500).json({error:e.message});}
+
+// Pairing code - mantido por compatibilidade (ja nao precisa com Bravos, mas nao quebra)
+app.post("/api/pairing-code", async (req, res) => {
+  try {
+    const phone = req.body && req.body.phone ? String(req.body.phone).replace(/\D/g, "") : "";
+    if (!phone) return res.status(400).json({ error: "phone obrigatorio" });
+    res.json({ ok: true, info: "Use a URL do Bravos para escanear QR: " + BRAVOS_URL, phone });
+  } catch (e) {
+    res.status(500).json({ error: e?.message });
+  }
 });
-app.post('/api/bot',async(req,res)=>{
-  try{const{messages,context}=req.body;
-  const r=await axios.post('https://api.anthropic.com/v1/messages',{model:'claude-haiku-4-5-20251001',max_tokens:300,system:'Atendente do '+(context||'Speakers Play')+'. Breve e profissional em portugues.',messages},{headers:{'x-api-key':ANTHROPIC_KEY,'anthropic-version':'2023-06-01'}});
-  res.json({reply:r.data.content[0].text});}catch(e){res.status(500).json({error:e.message});}
+
+// Webhook para receber mensagens do Bravos (configurar no Bravos depois)
+app.post("/api/webhook/bravos", async (req, res) => {
+  try {
+    const msg = req.body;
+    broadcastSSE({ type: "new_message", data: msg });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e?.message });
+  }
 });
-app.get('/health',(req,res)=>res.json({ok:true,uptime:process.uptime()}));
-const PORT=process.env.PORT||3000;app.listen(PORT,()=>console.log('SPEAKERS CRM porta '+PORT));
+
+app.listen(PORT, () => {
+  console.log(`[speakers-crm] rodando na porta ${PORT}`);
+  console.log(`[speakers-crm] Bravos URL: ${BRAVOS_URL}`);
+});
