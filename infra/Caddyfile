@@ -1,0 +1,40 @@
+# Caddyfile - HTTPS automatico via Let's Encrypt
+# As variaveis {$DOMAIN_CRM}, {$DOMAIN_BRAVOS}, {$ACME_EMAIL} vem do docker-compose.
+
+{
+    email {$ACME_EMAIL}
+}
+
+# CRM (frontend + API + SSE)
+{$DOMAIN_CRM} {
+    encode gzip
+
+    # SSE precisa manter conexao aberta; desabilita buffer do proxy
+    @sse path /events
+    handle @sse {
+        reverse_proxy crm:3000 {
+            flush_interval -1
+            transport http {
+                read_timeout 24h
+            }
+        }
+    }
+
+    handle {
+        reverse_proxy crm:3000
+    }
+
+    log {
+        output stdout
+        format console
+    }
+}
+
+# Painel QR do Bravos (opcional — so se DOMAIN_BRAVOS estiver setado)
+# Deixe linha abaixo comentada se nao usar subdominio separado
+# {$DOMAIN_BRAVOS} {
+#     reverse_proxy bravos:3001
+#     basicauth /* {
+#         admin $2a$14$HASH_DO_BCRYPT_AQUI  # gerar com: caddy hash-password
+#     }
+# }

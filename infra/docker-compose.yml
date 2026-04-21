@@ -1,0 +1,73 @@
+# Speakers CRM + Bravos + Caddy (HTTPS auto)
+# Rodar em uma VPS com Docker Engine + Compose v2 instalado.
+#
+# Variaveis obrigatorias em .env (mesma pasta deste arquivo):
+#   DOMAIN_CRM=crm.seudominio.com         # ou IP se nao tiver dominio
+#   DOMAIN_BRAVOS=wa.seudominio.com       # (opcional) painel QR do Bravos
+#   API_TOKEN=sp_xxxxxxxxxxxxxxxxxxxx     # token compartilhado CRM<->Bravos
+#   ANTHROPIC_API_KEY=sk-ant-xxx          # opcional; sem isso /api/bot fica desativado
+#   ACME_EMAIL=seu@email.com              # pra Let's Encrypt
+
+services:
+  bravos:
+    build:
+      context: ../../bravos-whatsapp-api
+      dockerfile: Dockerfile
+    container_name: bravos
+    restart: unless-stopped
+    environment:
+      API_TOKEN: ${API_TOKEN}
+      CLIENT_ID: speakers-crm
+      DB_PATH: /app/data/whatsapp.db
+      LOG_LEVEL: info
+      PUPPETEER_EXECUTABLE_PATH: /usr/bin/chromium
+      PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: "true"
+      WEBHOOK_URL: http://crm:3000/api/webhook/bravos
+      PORT: "3001"
+    volumes:
+      - bravos_wwebjs:/app/.wwebjs_auth   # sessao WhatsApp persistente
+      - bravos_data:/app/data             # SQLite persistente
+    expose:
+      - "3001"
+    # NAO exponho a porta ao host; Caddy eh o unico ponto de entrada
+
+  crm:
+    build:
+      context: ../
+      dockerfile: infra/Dockerfile
+    container_name: crm
+    restart: unless-stopped
+    environment:
+      PORT: "3000"
+      BRAVOS_URL: http://bravos:3001
+      BRAVOS_TOKEN: ${API_TOKEN}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    expose:
+      - "3000"
+    depends_on:
+      - bravos
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN_CRM: ${DOMAIN_CRM}
+      DOMAIN_BRAVOS: ${DOMAIN_BRAVOS:-}
+      ACME_EMAIL: ${ACME_EMAIL}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data      # certificados Let's Encrypt
+      - caddy_config:/config
+    depends_on:
+      - crm
+      - bravos
+
+volumes:
+  bravos_wwebjs:
+  bravos_data:
+  caddy_data:
+  caddy_config:
