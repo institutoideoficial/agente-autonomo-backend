@@ -51,6 +51,28 @@ cd /opt/speakers-crm/agente-autonomo-backend/infra
 ./deploy.sh
 ```
 
+## Smoke test pos-deploy
+Valida que todos os endpoints estao respondendo corretamente:
+```bash
+./smoke-test.sh                              # usa DOMAIN_CRM do .env
+./smoke-test.sh https://crm.seudominio.com   # ou passa URL manual
+```
+Checa: /health, /api/status, /app serve patch v4.1, /events eh SSE,
+validacao de input (400), /api/bot retorna 500 sem chave, TLS valido.
+
+## Migracao de dados do Railway (opcional)
+Se havia historico/sessao no Railway que vale a pena preservar:
+```bash
+# No seu PC local:
+npm i -g @railway/cli
+railway login
+railway link    # seleciona projeto/servico bravos
+./backup-railway-to-vps.sh deploy@IP_DA_VPS
+```
+Provavelmente os volumes do Railway estavam sem persistencia, entao o
+script so vai confirmar que nao ha nada util. Nesse caso, so escaneie
+o QR na VPS.
+
 ## Comandos uteis
 ```bash
 docker compose ps                       # status
