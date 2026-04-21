@@ -707,19 +707,17 @@ function checkStatus(){fetch(apiUrl("/api/status/speakers-crm")).then(r=>r.json(
 setTimeout(checkStatus,2000);
 </script>
 
-<!-- IMPERADOR REAL-TIME PATCH v2 -->
+<!-- IMPERADOR REAL-TIME PATCH v3 -->
 <script>
 (function(){
-  console.log("[imperador] patch v2 carregado");
-  var CONTAINER_SELECTOR = "#cl";
-
+  console.log("[imperador] v3 carregado");
   async function checkConnection(){
     try{
       var r = await fetch("/api/status/speakers-crm");
       var d = await r.json();
       var conn = d.status === "connected" || d.state === "connected";
-      var badges = document.querySelectorAll("*");
-      for(var b of badges){
+      var all = document.querySelectorAll("*");
+      for(var b of all){
         if(b.children.length === 0 && b.textContent.trim() === "Desconectado"){
           b.textContent = conn ? "Conectado" : "Desconectado";
           if(conn){ b.style.background = "#10b98133"; b.style.color = "#10b981"; }
@@ -731,60 +729,123 @@ setTimeout(checkStatus,2000);
   checkConnection();
   setInterval(checkConnection, 10000);
 
+  function chatIdToKey(chatId){ return "w" + chatId.replace(/[^0-9]/g, ""); }
+
+  function upsertRealConv(chatId, name, body, fromMe){
+    try{
+      var key = chatIdToKey(chatId);
+      if(typeof window.convs !== "object" || !window.convs) window.convs = {};
+      if(typeof window.msgs !== "object" || !window.msgs) window.msgs = {};
+      var now = new Date().toLocaleTimeString("pt-BR", {hour:"2-digit", minute:"2-digit"});
+      if(!window.convs[key]){
+        window.convs[key] = {
+          id: key, nm: name, nu: chatId.replace("@c.us",""), dept: "Vendas",
+          st: "open", ag: "thiago", tags: [], ts: Date.now(),
+          lst: body, dt: now, real: true, chatId: chatId
+        };
+        window.msgs[key] = [];
+      }
+      window.msgs[key].push({ txt: body, sent: fromMe ? 1 : 0, time: now });
+      window.convs[key].lst = body;
+      window.convs[key].ts = Date.now();
+      window.convs[key].dt = now;
+      window.convs[key].nm = name;
+      renderRealInSidebar(key);
+      if(window.cur === key && typeof renderChat === "function") renderChat(key);
+    }catch(e){ console.warn("[imperador] upsert err", e); }
+  }
+
+  function renderRealInSidebar(key){
+    var list = document.getElementById("cl");
+    if(!list) return;
+    var c = window.convs[key];
+    if(!c) return;
+    var existing = document.getElementById("ci-" + key);
+    if(existing){
+      var nm = existing.querySelector(".cnm");
+      if(nm) nm.textContent = c.nm;
+      list.insertBefore(existing, list.firstChild);
+      return;
+    }
+    var first = list.querySelector(".ci");
+    if(!first) return;
+    var clone = first.cloneNode(true);
+    clone.id = "ci-" + key;
+    clone.setAttribute("onclick", "selConv(\"" + key + "\")");
+    clone.setAttribute("data-real", "true");
+    var nm = clone.querySelector(".cnm");
+    if(nm) nm.textContent = c.nm;
+    var all = clone.querySelectorAll("*");
+    for(var el of all){
+      if(el.children.length === 0 && /^[A-Z]{1,2}$/.test(el.textContent)){
+        el.textContent = (c.nm[0] || "?").toUpperCase();
+        break;
+      }
+    }
+    var cr2 = clone.querySelector(".cr2");
+    if(cr2){
+      for(var el of cr2.querySelectorAll("*")){
+        if(el.children.length === 0 && el.textContent.length > 3){
+          el.textContent = c.lst || "";
+          break;
+        }
+      }
+    }
+    list.insertBefore(clone, list.firstChild);
+  }
+
   try{
     var es = new EventSource("/events");
-    var realContacts = window._realContacts = {};
+    window._realContacts = {};
     es.onmessage = function(ev){
       try{
         var data = JSON.parse(ev.data);
-        console.log("[imperador SSE]", data);
         if(data.type === "new_message" && data.data){
           var outer = data.data;
           var msg = outer.data || outer;
           var chatId = msg.chatId || msg.from || outer.chatId;
           var body = msg.body || msg.text || outer.body || "";
           var name = msg.notifyName || msg.pushName || (chatId ? chatId.replace("@c.us","") : "Desconhecido");
+          var fromMe = msg.fromMe === true;
           if(chatId){
-            if(!realContacts[chatId]){
-              realContacts[chatId] = { chatId: chatId, name: name, messages: [] };
-            }
-            realContacts[chatId].messages.push({ body: body, timestamp: Date.now(), fromMe: msg.fromMe });
-            realContacts[chatId].lastMessage = body;
-            realContacts[chatId].lastTimestamp = Date.now();
-            renderRealContact(realContacts[chatId]);
+            upsertRealConv(chatId, name, body, fromMe);
+            if(!fromMe) toast("Nova msg: " + name);
           }
         }
       }catch(e){ console.warn("[imperador] sse err", e); }
     };
-  }catch(e){ console.error("[imperador] sse setup falhou", e); }
+  }catch(e){ console.error("[imperador] sse err", e); }
 
-  function renderRealContact(c){
-    var list = document.querySelector(CONTAINER_SELECTOR);
-    if(!list){ console.warn("[imperador] container nao encontrado"); return; }
-    var existing = list.querySelector('[data-chatid="' + c.chatId + '"]');
-    if(existing){
-      var nameEl = existing.querySelector(".cnm");
-      if(nameEl) nameEl.textContent = c.name;
-      list.insertBefore(existing, list.firstChild);
-    } else {
-      var first = list.querySelector(".ci");
-      if(!first) return;
-      var clone = first.cloneNode(true);
-      clone.id = "ci-real-" + c.chatId.replace(/[^a-zA-Z0-9]/g,"");
-      clone.setAttribute("data-chatid", c.chatId);
-      var nameEl = clone.querySelector(".cnm");
-      if(nameEl) nameEl.textContent = c.name;
-      var all = clone.querySelectorAll("*");
-      for(var el of all){
-        if(el.children.length === 0 && el.textContent.length <= 2 && /^[A-Z]{1,2}$/.test(el.textContent)){
-          el.textContent = (c.name[0] || "?").toUpperCase();
-          break;
+  var _originalEnviar = window.enviar;
+  window.enviar = function(){
+    try{
+      var curId = window.cur;
+      if(curId && window.convs && window.convs[curId] && window.convs[curId].real){
+        var inp = document.getElementById("mi") || document.querySelector("textarea") || document.querySelector('input[type=text][placeholder*=Mens]');
+        if(inp && inp.value && inp.value.trim()){
+          var txt = inp.value.trim();
+          var chatId = window.convs[curId].chatId;
+          fetch("/api/send-message", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({phone: chatId.replace("@c.us",""), message: txt})
+          }).then(function(r){ return r.json(); }).then(function(d){
+            if(d && d.ok !== false){
+              upsertRealConv(chatId, window.convs[curId].nm, txt, true);
+            } else {
+              alert("Erro ao enviar: " + ((d && d.error) || "desconhecido"));
+            }
+          }).catch(function(e){ alert("Erro: " + e.message); });
+          inp.value = "";
+          return;
         }
       }
-      list.insertBefore(clone, list.firstChild);
+      if(_originalEnviar) return _originalEnviar.apply(this, arguments);
+    }catch(e){
+      console.error("[imperador] enviar err", e);
+      if(_originalEnviar) return _originalEnviar.apply(this, arguments);
     }
-    toast("Nova msg: " + c.name);
-  }
+  };
 
   function toast(text){
     var t = document.createElement("div");
@@ -795,7 +856,7 @@ setTimeout(checkStatus,2000);
   }
 
   window.imperador = {
-    contacts: function(){ return window._realContacts; },
+    contacts: function(){ return window.convs; },
     send: function(chatId, message){
       return fetch("/api/send-message", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({ phone: chatId.replace("@c.us",""), message: message }) }).then(r => r.json());
     },
@@ -803,7 +864,7 @@ setTimeout(checkStatus,2000);
       return fetch("/api/history?chatId=" + encodeURIComponent(chatId)).then(r => r.json());
     }
   };
-  console.log("[imperador] v2 pronto");
+  console.log("[imperador] v3 pronto");
 })();
 </script>
 </body>
