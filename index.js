@@ -120,13 +120,31 @@ app.post("/api/pairing-code", async (req, res) => {
   }
 });
 
-// Webhook para receber mensagens do Bravos (configurar no Bravos depois)
+// Webhook para receber mensagens do Bravos
+// Bravos envia: { type: "message_in"|"message_out"|"ready"|"disconnected", data: {...}, clientId, timestamp }
 app.post("/api/webhook/bravos", async (req, res) => {
   try {
-    const msg = req.body;
-    broadcastSSE({ type: "new_message", data: msg });
+    const msg = req.body || {};
+    const innerType = msg.type;
+    const inner = msg.data;
+    if (innerType === "message_in" || innerType === "message_out") {
+      broadcastSSE({
+        type: innerType,
+        data: inner,
+        clientId: msg.clientId,
+        timestamp: msg.timestamp
+      });
+    } else if (innerType === "ready") {
+      broadcastSSE({ type: "whatsapp_ready", timestamp: msg.timestamp });
+    } else if (innerType === "disconnected") {
+      broadcastSSE({ type: "whatsapp_disconnected", data: inner, timestamp: msg.timestamp });
+    } else {
+      // fallback - mantem compat com payloads desconhecidos
+      broadcastSSE({ type: "new_message", data: msg });
+    }
     res.json({ ok: true });
   } catch (e) {
+    console.error("[webhook]", e?.message);
     res.status(500).json({ error: e?.message });
   }
 });
