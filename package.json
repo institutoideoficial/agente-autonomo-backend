@@ -4,9 +4,11 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "test": "node tests/webhook.test.js && node tests/frontend.test.js",
+    "test": "node tests/webhook.test.js && node tests/frontend.test.js && node tests/e2e.test.js",
+    "test:unit": "node tests/webhook.test.js && node tests/frontend.test.js",
     "test:webhook": "node tests/webhook.test.js",
-    "test:frontend": "node tests/frontend.test.js"
+    "test:frontend": "node tests/frontend.test.js",
+    "test:e2e": "node tests/e2e.test.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.30.0",
