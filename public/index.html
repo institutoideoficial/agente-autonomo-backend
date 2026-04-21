@@ -356,13 +356,7 @@ var QRS=[
   {n:'Horario',t:'Nosso horario e segunda a sexta das 8h as 18h.'},
   {n:'Encerramento',t:'Muito obrigado pelo contato! Qualquer duvida estamos a disposicao.'}
 ];
-var convs={
-  d1:{id:'d1',nm:'Carlos Mendez',ph:'5511911111111',dept:'Vendas',st:'open',tag:'venda',ag:'bot',msgs:[{r:'a',t:'Ola, Carlos! Como posso ajudar?',ts:'09:30'},{r:'u',t:'Quero saber sobre o programa Speakers Play',ts:'09:31'}],nota:''},
-  d2:{id:'d2',nm:'Ana Lima',ph:'5511922222222',dept:'Suporte',st:'open',tag:'suporte',ag:'thiago',msgs:[{r:'a',t:'Ola, Ana! Como posso ajudar?',ts:'09:15'},{r:'u',t:'Qual o horario da imersão presencial?',ts:'09:16'}],nota:''},
-  d3:{id:'d3',nm:'Roberto Faria',ph:'5511933333333',dept:'Vendas',st:'resolved',tag:'venda',ag:'bot',msgs:[{r:'a',t:'Ola, Roberto! Como posso ajudar?',ts:'08:50'},{r:'u',t:'Obrigado pelo atendimento!',ts:'08:55'}],nota:'Cliente VIP'},
-  d4:{id:'d4',nm:'Patricia Souza',ph:'5511944444444',dept:'Suporte',st:'pending',tag:'urgente',ag:'vanessa',msgs:[{r:'a',t:'Ola, Patricia! Como posso ajudar?',ts:'08:30'},{r:'u',t:'Preciso de ajuda urgente!',ts:'08:32'}],nota:'Pedido atrasado'},
-  d5:{id:'d5',nm:'Marcos Oliveira',ph:'5511955555555',dept:'Marketing',st:'bot',tag:'lead',ag:'bot',msgs:[{r:'a',t:'Ola, Marcos! Como posso ajudar?',ts:'08:00'},{r:'u',t:'Vi o anuncio do Speakers Play',ts:'08:01'}],nota:''}
-};
+var convs={};
 
 function h(){return new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});}
 function av(n){return n.split(' ').map(function(w){return w[0]||'';}).join('').substring(0,2).toUpperCase();}
@@ -592,7 +586,7 @@ function criarConv(){
   var id='c'+Date.now();
   var dept=document.getElementById('nd').value;
   var ph=((document.getElementById('np')||{}).value||'').toString().replace(/\D/g,'');
-  convs[id]={id:id,nm:nm,ph:ph,dept:dept,st:'open',tag:'',ag:'bot',msgs:[{r:'a',t:'Ola, '+nm.split(' ')[0]+'! Como posso ajudar?',ts:h()}],nota:''};
+  convs[id]={id:id,nm:nm,ph:ph,dept:dept,st:'open',tag:'',ag:'thiago',msgs:[],nota:''};
   closeModal('mnew');
   document.getElementById('nn').value='';
   document.getElementById('np').value='';
@@ -702,20 +696,40 @@ renderSB();
 
 function apiUrl(p){return window.location.origin+p;}
 (function startSSE(){try{var es=new EventSource(apiUrl("/events"));es.onmessage=function(e){try{var d=JSON.parse(e.data);if(d.type==="new_message")handleMsg(d.data);}catch(x){}};es.onerror=function(){setTimeout(startSSE,5000);};}catch(e){}})(  );
-function handleMsg(m){var from=m.from.replace("@s.whatsapp.net","");var ts=new Date(m.timestamp).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});var id="wa_"+from;if(!convs[id])convs[id]={id:id,nm:from,ph:from,dept:"WhatsApp",st:"open",tag:"lead",ag:"bot",msgs:[],nota:""};convs[id].msgs.push({r:"u",t:m.text,ts:ts});var ci=document.getElementById("ci-"+id);if(ci){var pv=ci.querySelector(".cpv");if(pv)pv.textContent=m.text;}else renderSB();if(cur===id){var bg=document.getElementById("msgs");if(bg){addBub({r:"u",t:m.text,ts:ts},bg);bg.scrollTop=bg.scrollHeight;}}}
+function handleMsg(m){var from=m.from.replace("@s.whatsapp.net","");var ts=new Date(m.timestamp).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});var id="wa_"+from;if(!convs[id])convs[id]={id:id,nm:from,ph:from,dept:"WhatsApp",st:"open",tag:"lead",ag:"thiago",msgs:[],nota:""};convs[id].msgs.push({r:"u",t:m.text,ts:ts});var ci=document.getElementById("ci-"+id);if(ci){var pv=ci.querySelector(".cpv");if(pv)pv.textContent=m.text;}else renderSB();if(cur===id){var bg=document.getElementById("msgs");if(bg){addBub({r:"u",t:m.text,ts:ts},bg);bg.scrollTop=bg.scrollHeight;}}}
 function checkStatus(){fetch(apiUrl("/api/status/speakers-crm")).then(r=>r.json()).then(d=>{var st=(d.instance&&d.instance.state)||d.state||"";if(st==="open"||st==="CONNECTED"){document.getElementById("conn-bar").classList.add("on");document.getElementById("cb-dot").classList.add("on");document.getElementById("cb-t1").textContent="WhatsApp Conectado";document.getElementById("wst").textContent="Ativo";document.getElementById("wst").classList.add("on");}}).catch(function(){});}
 setTimeout(checkStatus,2000);
 </script>
 
-<!-- IMPERADOR REAL-TIME PATCH v3 -->
+<!-- IMPERADOR REAL-TIME PATCH v4 -->
 <script>
 (function(){
-  console.log("[imperador] v3 carregado");
+  console.log("[imperador] v4 carregado");
+
+  // v4: desativa bot automatico em todas convs (evita /api/bot sem ANTHROPIC_API_KEY)
+  function disableAllBots(){
+    try{
+      if(window.convs){
+        for(var k in window.convs){
+          if(window.convs[k] && window.convs[k].ag === "bot"){
+            window.convs[k].ag = "thiago";
+          }
+        }
+      }
+      if(window.botAtivo){
+        for(var k2 in window.botAtivo) window.botAtivo[k2] = false;
+      }
+      if(typeof renderSB === "function"){ try{ renderSB(); }catch(e){} }
+    }catch(e){ console.warn("[imperador] disableAllBots err", e); }
+  }
+  disableAllBots();
+
   async function checkConnection(){
     try{
       var r = await fetch("/api/status/speakers-crm");
       var d = await r.json();
-      var conn = d.status === "connected" || d.state === "connected";
+      var conn = d.status === "connected" || d.state === "connected" ||
+                 (d.instance && (d.instance.state === "open" || d.instance.state === "CONNECTED"));
       var all = document.querySelectorAll("*");
       for(var b of all){
         if(b.children.length === 0 && b.textContent.trim() === "Desconectado"){
@@ -730,73 +744,72 @@ setTimeout(checkStatus,2000);
   setInterval(checkConnection, 10000);
 
   function chatIdToKey(chatId){ return "w" + chatId.replace(/[^0-9]/g, ""); }
+  function nowHM(){ return new Date().toLocaleTimeString("pt-BR", {hour:"2-digit", minute:"2-digit"}); }
 
   function upsertRealConv(chatId, name, body, fromMe){
     try{
       var key = chatIdToKey(chatId);
       if(typeof window.convs !== "object" || !window.convs) window.convs = {};
-      if(typeof window.msgs !== "object" || !window.msgs) window.msgs = {};
-      var now = new Date().toLocaleTimeString("pt-BR", {hour:"2-digit", minute:"2-digit"});
       if(!window.convs[key]){
         window.convs[key] = {
-          id: key, nm: name, nu: chatId.replace("@c.us",""), dept: "Vendas",
-          st: "open", ag: "thiago", tags: [], ts: Date.now(),
-          lst: body, dt: now, real: true, chatId: chatId
+          id: key, nm: name || key, ph: chatId.replace("@c.us",""),
+          dept: "WhatsApp", st: "open", tag: "lead", ag: "thiago",
+          msgs: [], nota: "", real: true, chatId: chatId, historyLoaded: false
         };
-        window.msgs[key] = [];
       }
-      window.msgs[key].push({ txt: body, sent: fromMe ? 1 : 0, time: now });
-      window.convs[key].lst = body;
-      window.convs[key].ts = Date.now();
-      window.convs[key].dt = now;
-      window.convs[key].nm = name;
-      renderRealInSidebar(key);
-      if(window.cur === key && typeof renderChat === "function") renderChat(key);
+      window.convs[key].msgs.push({ r: fromMe ? "out" : "u", t: body, ts: nowHM() });
+      if(name) window.convs[key].nm = name;
+      if(typeof renderSB === "function") renderSB();
+      if(window.cur === key){
+        if(typeof renderMsgs === "function") renderMsgs(key);
+        else if(typeof renderChat === "function") renderChat(key);
+      }
     }catch(e){ console.warn("[imperador] upsert err", e); }
   }
 
-  function renderRealInSidebar(key){
-    var list = document.getElementById("cl");
-    if(!list) return;
-    var c = window.convs[key];
-    if(!c) return;
-    var existing = document.getElementById("ci-" + key);
-    if(existing){
-      var nm = existing.querySelector(".cnm");
-      if(nm) nm.textContent = c.nm;
-      list.insertBefore(existing, list.firstChild);
-      return;
+  // v4: carrega historico /api/history quando entra em conv real (uma vez por conv)
+  async function loadHistory(conv){
+    try{
+      if(!conv || !conv.chatId || conv.historyLoaded) return;
+      conv.historyLoaded = true;
+      var r = await fetch("/api/history?chatId=" + encodeURIComponent(conv.chatId) + "&limit=50");
+      if(!r.ok){ conv.historyLoaded = false; return; }
+      var data = await r.json();
+      var list = data.messages || data.history || data.data || (Array.isArray(data) ? data : []);
+      if(!Array.isArray(list) || list.length === 0) return;
+      var hist = list.map(function(m){
+        var ts = m.timestamp
+          ? new Date(typeof m.timestamp === "number" && m.timestamp < 1e12 ? m.timestamp * 1000 : m.timestamp)
+              .toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})
+          : (m.time || m.ts || "");
+        var fromMe = m.fromMe === true || m.sent === 1 || m.sent === true;
+        var text = m.body || m.text || m.t || m.message || "";
+        return { r: fromMe ? "out" : "u", t: text, ts: ts };
+      }).filter(function(m){ return m.t; });
+      if(hist.length === 0) return;
+      conv.msgs = hist.concat(conv.msgs || []);
+      if(window.cur === conv.id && typeof renderMsgs === "function") renderMsgs(conv.id);
+    }catch(e){
+      console.warn("[imperador] history err", e);
+      if(conv) conv.historyLoaded = false;
     }
-    var first = list.querySelector(".ci");
-    if(!first) return;
-    var clone = first.cloneNode(true);
-    clone.id = "ci-" + key;
-    clone.setAttribute("onclick", "selConv(\"" + key + "\")");
-    clone.setAttribute("data-real", "true");
-    var nm = clone.querySelector(".cnm");
-    if(nm) nm.textContent = c.nm;
-    var all = clone.querySelectorAll("*");
-    for(var el of all){
-      if(el.children.length === 0 && /^[A-Z]{1,2}$/.test(el.textContent)){
-        el.textContent = (c.nm[0] || "?").toUpperCase();
-        break;
-      }
-    }
-    var cr2 = clone.querySelector(".cr2");
-    if(cr2){
-      for(var el of cr2.querySelectorAll("*")){
-        if(el.children.length === 0 && el.textContent.length > 3){
-          el.textContent = c.lst || "";
-          break;
-        }
-      }
-    }
-    list.insertBefore(clone, list.firstChild);
   }
+
+  // v4: hook selConv para carregar historico ao abrir conv real
+  var _origSelConv = window.selConv;
+  window.selConv = function(id){
+    try{
+      if(_origSelConv) _origSelConv.apply(this, arguments);
+      var c = window.convs && window.convs[id];
+      if(c && c.real) loadHistory(c);
+    }catch(e){
+      console.error("[imperador] selConv err", e);
+      if(_origSelConv) return _origSelConv.apply(this, arguments);
+    }
+  };
 
   try{
     var es = new EventSource("/events");
-    window._realContacts = {};
     es.onmessage = function(ev){
       try{
         var data = JSON.parse(ev.data);
@@ -816,30 +829,35 @@ setTimeout(checkStatus,2000);
     };
   }catch(e){ console.error("[imperador] sse err", e); }
 
+  // v4: enviar em conv real -> /api/send-message. Demais convs: no-op (nao chamar /api/bot)
   var _originalEnviar = window.enviar;
   window.enviar = function(){
     try{
       var curId = window.cur;
-      if(curId && window.convs && window.convs[curId] && window.convs[curId].real){
-        var inp = document.getElementById("mi") || document.querySelector("textarea") || document.querySelector('input[type=text][placeholder*=Mens]');
-        if(inp && inp.value && inp.value.trim()){
-          var txt = inp.value.trim();
-          var chatId = window.convs[curId].chatId;
-          fetch("/api/send-message", {
-            method: "POST",
-            headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({phone: chatId.replace("@c.us",""), message: txt})
-          }).then(function(r){ return r.json(); }).then(function(d){
-            if(d && d.ok !== false){
-              upsertRealConv(chatId, window.convs[curId].nm, txt, true);
-            } else {
-              alert("Erro ao enviar: " + ((d && d.error) || "desconhecido"));
-            }
-          }).catch(function(e){ alert("Erro: " + e.message); });
-          inp.value = "";
-          return;
-        }
+      var c = curId && window.convs ? window.convs[curId] : null;
+      if(c && c.real){
+        var inp = document.getElementById("minp") || document.querySelector("textarea");
+        if(!inp || !inp.value || !inp.value.trim()) return;
+        var txt = inp.value.trim();
+        var chatId = c.chatId;
+        c.msgs.push({ r: "out", t: txt, ts: nowHM() });
+        if(typeof renderMsgs === "function") renderMsgs(curId);
+        if(typeof renderSB === "function") renderSB();
+        inp.value = "";
+        inp.style.height = "auto";
+        fetch("/api/send-message", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({phone: chatId.replace("@c.us",""), message: txt})
+        }).then(function(r){ return r.json(); }).then(function(d){
+          if(d && d.ok === false){
+            toast("Erro ao enviar: " + ((d && d.error) || "desconhecido"));
+          }
+        }).catch(function(e){ toast("Erro: " + e.message); });
+        return;
       }
+      // v4: garantia extra - se por acaso convs[curId].ag === 'bot', desativa antes de delegar
+      if(c && c.ag === "bot"){ c.ag = "thiago"; if(window.botAtivo) window.botAtivo[curId] = false; }
       if(_originalEnviar) return _originalEnviar.apply(this, arguments);
     }catch(e){
       console.error("[imperador] enviar err", e);
@@ -850,7 +868,7 @@ setTimeout(checkStatus,2000);
   function toast(text){
     var t = document.createElement("div");
     t.textContent = text;
-    t.style.cssText = "position:fixed;top:20px;right:20px;background:#d4af37;color:#000;padding:12px 20px;border-radius:10px;font-weight:600;z-index:999999;box-shadow:0 4px 20px rgba(0,0,0,.5);";
+    t.style.cssText = "position:fixed;top:20px;right:20px;background:#C8A84B;color:#111;padding:12px 20px;border-radius:10px;font-weight:600;z-index:999999;box-shadow:0 4px 20px rgba(0,0,0,.5);";
     document.body.appendChild(t);
     setTimeout(function(){ t.style.opacity="0"; t.style.transition="opacity .3s"; setTimeout(function(){ t.remove(); }, 400); }, 3500);
   }
@@ -862,9 +880,11 @@ setTimeout(checkStatus,2000);
     },
     history: function(chatId){
       return fetch("/api/history?chatId=" + encodeURIComponent(chatId)).then(r => r.json());
-    }
+    },
+    disableBots: disableAllBots,
+    reloadHistory: function(id){ var c = window.convs && window.convs[id]; if(c){ c.historyLoaded = false; return loadHistory(c); } }
   };
-  console.log("[imperador] v3 pronto");
+  console.log("[imperador] v4 pronto");
 })();
 </script>
 </body>
