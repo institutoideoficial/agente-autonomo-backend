@@ -325,6 +325,11 @@ async function run(){
     expect(html.includes("AudioContext"), "Audio: WebAudio API");
     expect(html.includes("notifPermission"), "Notif: pede permissao");
     expect(html.includes("IMP_AUDIO_KEY"), "Audio: localStorage toggle");
+    // Theme v4.11
+    expect(html.includes("body.theme-light"), "Theme: classe light com paleta");
+    expect(html.includes("toggleTheme"), "Theme: funcao global");
+    expect(html.includes("IMP_THEME_KEY"), "Theme: localStorage");
+    expect(html.includes('id="nav-theme"'), "Theme: botao na sidebar");
   }
 
   console.log("\n== Teste: API agendamento (v4.8) ==");
