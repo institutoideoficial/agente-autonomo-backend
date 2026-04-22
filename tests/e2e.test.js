@@ -423,6 +423,120 @@ async function run(){
     expect(retry404.status === 404, "retry inexistente -> 404");
   }
 
+  console.log("\n== Teste: Eduzz webhook v1 (flat) (v4.18) ==");
+  {
+    const base = `http://127.0.0.1:${CRM_PORT}`;
+    // Status
+    const r0 = await fetch(`${base}/api/integrations/eduzz/status`);
+    const j0 = await r0.json();
+    expect(j0.ok === true && j0.webhookUrl.endsWith('/api/webhook/eduzz'), "status ok + webhookUrl");
+
+    // Payload v1 flat (formato legado Eduzz)
+    const flatPayload = {
+      event_name: 'invoice_paid',
+      cus_name: 'Cliente Eduzz V1',
+      cus_email: 'v1@test.com',
+      cus_cel: '11977776666',
+      product_name: 'Curso Eduzz Anual',
+      product_cod: 123456,
+      trans_cod: 'tx_ed_001',
+      trans_value: 697,
+      trans_status: 3
+    };
+    const r1 = await fetch(`${base}/api/webhook/eduzz`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(flatPayload)
+    });
+    const j1 = await r1.json();
+    expect(j1.ok === true, "webhook v1 aceitou");
+    expect(j1.normalized.phone === '11977776666', "normalizou phone de cus_cel");
+    expect(j1.normalized.name === 'Cliente Eduzz V1', "normalizou name de cus_name");
+    expect(j1.normalized.status === 'paid', "mapeou invoice_paid -> paid");
+    expect(typeof j1.autoScheduledId === 'string', "criou auto-schedule");
+
+    // Lista eventos
+    const r2 = await fetch(`${base}/api/integrations/eduzz/events?limit=5`);
+    const j2 = await r2.json();
+    expect(j2.items[0].productName === 'Curso Eduzz Anual', "productName preservado");
+    expect(j2.items[0].total === 697, "total preservado");
+    expect(j2.items[0].type === 'eduzz', "type=eduzz");
+
+    // Payload v3 nested (formato moderno)
+    const nestedPayload = {
+      event: 'invoice_paid',
+      data: {
+        customer: { name: 'Cliente Eduzz V3', email: 'v3@test.com', cellphone: '11944443333' },
+        product: { name: 'Curso V3', id: 'p-v3' },
+        transaction: { id: 'tx_ed_v3', status: 'paid', value: 1297 }
+      }
+    };
+    const r3 = await fetch(`${base}/api/webhook/eduzz`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(nestedPayload)
+    });
+    const j3 = await r3.json();
+    expect(j3.ok === true, "webhook v3 aceitou");
+    expect(j3.normalized.phone === '11944443333', "v3: phone de customer.cellphone");
+    expect(j3.normalized.name === 'Cliente Eduzz V3', "v3: name de customer.name");
+    expect(j3.normalized.status === 'paid', "v3: status paid");
+
+    // Mapeamento de eventos variados
+    for (const [ev, expected] of [['invoice_refused', 'refused'], ['invoice_refund', 'refunded'], ['cart_abandonment', 'abandoned'], ['invoice_expired', 'expired'], ['invoice_waiting_payment', 'pending']]) {
+      const r = await fetch(`${base}/api/webhook/eduzz`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event_name: ev, cus_name: 'X', cus_cel: '11900000001' })
+      });
+      const j = await r.json();
+      expect(j.normalized.status === expected, `${ev} -> ${expected}`);
+    }
+
+    // Metrics
+    const rm = await fetch(`${base}/api/integrations/eduzz/metrics`);
+    const jm = await rm.json();
+    expect(jm.ok === true && jm.metrics, "metrics endpoint");
+    expect(jm.metrics.hoje.paid >= 2, "metrics conta pagas");
+    expect(jm.metrics.hoje.revenue >= 697 + 1297, "metrics soma receita");
+
+    // CSV
+    const rc = await fetch(`${base}/api/integrations/eduzz/events.csv`);
+    expect(rc.status === 200 && (rc.headers.get('content-type') || '').includes('text/csv'), "CSV ok");
+    const csvText = await rc.text();
+    expect(csvText.includes('Cliente Eduzz V1') || csvText.includes('Cliente Eduzz V3'), "CSV tem dados");
+
+    // Rules
+    const rr = await fetch(`${base}/api/integrations/eduzz/rules`);
+    const jr = await rr.json();
+    expect(jr.ok === true && Array.isArray(jr.rules) && jr.rules.length >= 5, "5+ regras default Eduzz");
+    expect(jr.rules.some(r => r.status === 'expired'), "regra expired existe (especifica Eduzz)");
+  }
+
+  console.log("\n== Teste: Eduzz HMAC signature (v4.18) ==");
+  {
+    // Com EDUZZ_HMAC_SECRET nao configurado, HMAC eh aceito (modo aberto). Isso vem do env.
+    // Como o server foi iniciado sem esses env, request sem signature passa. Valida comportamento:
+    const r = await fetch(`http://127.0.0.1:${CRM_PORT}/api/webhook/eduzz`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event_name: 'invoice_paid', cus_name: 'No Auth', cus_cel: '11988887777' })
+    });
+    expect(r.status === 200, "sem secret configurado, aceita tudo");
+  }
+
+  console.log("\n== Teste: Eduzz frontend (v4.18) ==");
+  {
+    const r = await fetch(`http://127.0.0.1:${CRM_PORT}/app`);
+    const html = await r.text();
+    expect(html.includes("function handleEduzzEvent"), "Eduzz: handler SSE");
+    expect(html.includes("eduzz_event"), "Eduzz: escuta eduzz_event");
+    expect(html.includes("📘 Eduzz"), "Eduzz: aba na UI");
+    expect(html.includes("fetchEduzzRules"), "Eduzz: fetch rules");
+    expect(html.includes("fetchEduzzEvents"), "Eduzz: fetch events");
+    expect(html.includes("'Eduzz-BoasVindas'"), "Eduzz: template BoasVindas");
+    expect(html.includes("'Eduzz-Abandono'"), "Eduzz: template Abandono");
+    expect(html.includes("'Eduzz-Boleto-Vencido'"), "Eduzz: template Boleto Vencido");
+    expect(html.includes("IMP_PLATFORM_KEY"), "Eduzz: persiste aba ativa");
+    expect(html.includes("📘 Vendas Eduzz"), "Dashboard: secao Eduzz");
+  }
+
   console.log("\n== Teste: Webhook Greenn (v4.12) ==");
   {
     // Status endpoint

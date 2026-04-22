@@ -480,6 +480,285 @@ app.get("/api/integrations/greenn/status", (req, res) => {
 });
 
 // ============================================================
+// INTEGRACAO EDUZZ (v4.18) - webhook v1 (flat) + v3 (HMAC) + SSE
+// ============================================================
+const crypto = require("crypto");
+const EDUZZ_FILE = process.env.EDUZZ_FILE || path.join(__dirname, "data", "eduzz-events.json");
+const EDUZZ_HMAC_SECRET = process.env.EDUZZ_HMAC_SECRET || ""; // v3
+const EDUZZ_ORIGIN_SECRET = process.env.EDUZZ_ORIGIN_SECRET || ""; // v1
+const EDUZZ_MAX_EVENTS = 200;
+const EDUZZ_RULES_FILE = process.env.EDUZZ_RULES_FILE || path.join(__dirname, "data", "eduzz-rules.json");
+
+function eduzzLoad() { try { return JSON.parse(fs.readFileSync(EDUZZ_FILE, "utf8")); } catch { return []; } }
+function eduzzSave(arr) { try { fs.writeFileSync(EDUZZ_FILE, JSON.stringify(arr.slice(-EDUZZ_MAX_EVENTS), null, 2)); } catch (e) { console.error("[eduzz]", e?.message); } }
+
+// Mapeia event_name (ou trans_status numerico) Eduzz -> status interno comum
+function eduzzMapStatus(eventName, transStatus) {
+  const e = String(eventName || "").toLowerCase();
+  // Mapeamento por nome de evento (tanto v1 quanto v3)
+  if (e === "invoice_paid" || e === "contract_paid" || e.endsWith("_paid")) return "paid";
+  if (e === "invoice_refused" || e.includes("refused")) return "refused";
+  if (e === "invoice_refund" || e.includes("refund")) return "refunded";
+  if (e === "invoice_chargeback" || e.includes("chargeback")) return "chargedback";
+  if (e === "invoice_expired" || e.includes("expired")) return "expired";
+  if (e === "invoice_canceled" || e.includes("cancel")) return "cancelled";
+  if (e === "invoice_waiting_payment" || e.includes("waiting")) return "pending";
+  if (e === "invoice_open" || e === "contract_open") return "pending";
+  if (e === "cart_abandonment" || e.includes("abandon")) return "abandoned";
+  // Fallback por trans_status (v1 numerico)
+  // 1 ou 3 = pago na Eduzz legacy
+  const s = Number(transStatus);
+  if (s === 1 || s === 3) return "paid";
+  if (s === 2) return "pending";
+  if (s === 4) return "refused";
+  if (s === 7) return "refunded";
+  return e || "unknown";
+}
+
+function normalizeEduzzPayload(raw) {
+  raw = raw || {};
+  // Detecta v1 (flat com cus_*/product_*/trans_*) vs v3 (nested .data)
+  const isFlat = ("cus_email" in raw) || ("cus_name" in raw) || ("trans_cod" in raw) || ("product_cod" in raw);
+  const eventName = raw.event_name || raw.event || raw.type || (raw.data && (raw.data.event || raw.data.event_name)) || "";
+
+  let name, email, phone, cel, productName, productCod, transValue, transStatus, transCod, paidAt;
+  if (isFlat) {
+    name        = raw.cus_name || "";
+    email       = raw.cus_email || "";
+    cel         = raw.cus_cel || raw.cus_tel || "";
+    phone       = String(cel || "").replace(/\D/g, "");
+    productName = raw.product_name || "";
+    productCod  = raw.product_cod || raw.product_id || "";
+    transValue  = Number(raw.trans_value || raw.trans_paid || 0);
+    transStatus = raw.trans_status;
+    transCod    = raw.trans_cod || raw.trans_id || "";
+    paidAt      = raw.trans_paiddate && raw.trans_paidtime ? `${raw.trans_paiddate}T${raw.trans_paidtime}` : null;
+  } else {
+    // v3: estrutura aninhada (tenta varios paths)
+    const d = raw.data || raw;
+    const cus = d.customer || d.cus || d.client || {};
+    const prod = d.product || d.products?.[0] || d.item || {};
+    const trans = d.transaction || d.trans || d.invoice || d;
+    name        = cus.name || cus.full_name || "";
+    email       = cus.email || "";
+    cel         = cus.cellphone || cus.phone || cus.cel || cus.mobile || "";
+    phone       = String(cel || "").replace(/\D/g, "");
+    productName = prod.name || prod.title || "";
+    productCod  = prod.id || prod.code || prod.cod || "";
+    transValue  = Number(trans.value || trans.amount || trans.total || 0);
+    transStatus = trans.status;
+    transCod    = trans.id || trans.code || trans.cod || "";
+    paidAt      = trans.paid_at || trans.paidAt || null;
+  }
+
+  const status = eduzzMapStatus(eventName, transStatus);
+  return {
+    event: eventName || "unknown",
+    type: "eduzz",
+    status,
+    statusLabel: greennStatusLabel(status), // reusa labels (mesmo mapping)
+    name, email, phone,
+    productName,
+    productCod,
+    total: transValue,
+    currency: "BRL",
+    transactionId: transCod,
+    paidAt,
+    receivedAt: Date.now(),
+    raw
+  };
+}
+
+function eduzzVerifyHmac(req) {
+  if (!EDUZZ_HMAC_SECRET) return true; // sem secret = aceita
+  const sig = req.headers["x-signature"] || req.headers["x-eduzz-signature"] || "";
+  if (!sig) return false;
+  const body = JSON.stringify(req.body || {});
+  const expected = crypto.createHmac("sha256", EDUZZ_HMAC_SECRET).update(body).digest("hex");
+  return crypto.timingSafeEqual(Buffer.from(sig, "utf8"), Buffer.from(expected, "utf8"));
+}
+function eduzzVerifyOrigin(body) {
+  if (!EDUZZ_ORIGIN_SECRET) return true;
+  return body && body.origin_secret === EDUZZ_ORIGIN_SECRET;
+}
+
+// Regras auto-follow-up Eduzz (independentes das Greenn)
+const EDUZZ_RULES_DEFAULTS = [
+  { status: "paid",       delayMin: 1,  enabled: true,  message: "{nome}, que felicidade ter voce! 🌟\n\nSua matricula em {produto} foi aprovada! ({valor})\n\nAcesso em instantes. Qualquer duvida me chama por aqui.\n\nBora transformar sua oratoria? ✨" },
+  { status: "abandoned",  delayMin: 15, enabled: true,  message: "Oi {nome}! Vi que voce comecou a compra do {produto} e parou no meio. Precisa de ajuda? Pix, cartao parcelado ou boleto, resolvo por aqui." },
+  { status: "refused",    delayMin: 5,  enabled: true,  message: "{nome}, o pagamento do {produto} nao foi aprovado. Quer tentar outro metodo? Tenho Pix, outro cartao ou boleto." },
+  { status: "expired",    delayMin: 5,  enabled: true,  message: "{nome}, seu boleto do {produto} venceu. Quer que eu gere um novo? Tambem tenho Pix que cai na hora." },
+  { status: "refunded",   delayMin: 1,  enabled: false, message: "{nome}, reembolso do {produto} ({valor}) confirmado. Chega na sua conta em ate 7 dias uteis.\n\nSe mudar de ideia, eh so me chamar!" }
+];
+function eduzzRulesLoad() {
+  try { return JSON.parse(fs.readFileSync(EDUZZ_RULES_FILE, "utf8")); }
+  catch { fs.writeFileSync(EDUZZ_RULES_FILE, JSON.stringify(EDUZZ_RULES_DEFAULTS, null, 2)); return EDUZZ_RULES_DEFAULTS.slice(); }
+}
+function eduzzRulesSave(arr) { try { fs.writeFileSync(EDUZZ_RULES_FILE, JSON.stringify(arr || [], null, 2)); } catch (e) { console.error("[eduzz rules]", e?.message); } }
+
+app.post("/api/webhook/eduzz", (req, res) => {
+  try {
+    // Auth: v3 HMAC OU v1 origin_secret
+    const okHmac = eduzzVerifyHmac(req);
+    const okOrigin = eduzzVerifyOrigin(req.body);
+    if (!okHmac && !okOrigin) {
+      return res.status(401).json({ ok: false, error: "assinatura invalida" });
+    }
+    const norm = normalizeEduzzPayload(req.body);
+    const arr = eduzzLoad();
+    arr.push(norm);
+    eduzzSave(arr);
+
+    // auto-follow-up
+    let autoScheduledId = null;
+    try {
+      if (norm.phone) {
+        const rules = eduzzRulesLoad();
+        const rule = rules.find(r => r.enabled && r.status === norm.status);
+        if (rule && rule.message) {
+          const expanded = expandGreennTemplate(rule.message, norm); // reusa expandGreennTemplate (mesmo shape)
+          const sendAt = Date.now() + (Number(rule.delayMin) || 0) * 60 * 1000;
+          const schedArr = schedLoad();
+          const item = {
+            id: schedNewId(),
+            phone: norm.phone,
+            message: expanded,
+            note: `[auto Eduzz: ${norm.statusLabel}]`,
+            sendAt,
+            status: "pending",
+            createdAt: Date.now(),
+            sentAt: null,
+            error: null,
+            source: "eduzz-auto",
+            sourceStatus: norm.status,
+            sourceProduct: norm.productName,
+            sourceTransaction: norm.transactionId
+          };
+          schedArr.push(item);
+          schedSave(schedArr);
+          autoScheduledId = item.id;
+          console.log(`[eduzz-auto] agendou ${item.id} pra ${new Date(sendAt).toISOString()} (${norm.status})`);
+        }
+      }
+    } catch (e) { console.error("[eduzz-auto]", e?.message); }
+
+    broadcastSSE({
+      type: "eduzz_event",
+      data: {
+        event: norm.event, status: norm.status, statusLabel: norm.statusLabel,
+        name: norm.name, phone: norm.phone, email: norm.email,
+        productName: norm.productName, total: norm.total, currency: norm.currency,
+        transactionId: norm.transactionId, receivedAt: norm.receivedAt, autoScheduledId
+      }
+    });
+    res.json({ ok: true, normalized: { phone: norm.phone, name: norm.name, status: norm.status }, autoScheduledId });
+  } catch (e) {
+    console.error("[eduzz webhook]", e?.message);
+    res.status(500).json({ ok: false, error: e?.message });
+  }
+});
+
+function eduzzMetrics() {
+  const all = eduzzLoad();
+  const now = Date.now();
+  const day = 24 * 60 * 60 * 1000;
+  const startOfDay = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x.getTime(); };
+  const today = startOfDay(now), week = now - 7 * day, month = now - 30 * day;
+  const bucket = (filterFn) => {
+    const arr = all.filter(filterFn);
+    const paid = arr.filter(x => x.status === "paid");
+    const abandoned = arr.filter(x => x.status === "abandoned");
+    const refused = arr.filter(x => x.status === "refused");
+    const expired = arr.filter(x => x.status === "expired");
+    const refunded = arr.filter(x => x.status === "refunded" || x.status === "chargedback");
+    const revenue = paid.reduce((s, x) => s + (Number(x.total) || 0), 0);
+    return {
+      total: arr.length, paid: paid.length, abandoned: abandoned.length,
+      refused: refused.length, expired: expired.length, refunded: refunded.length,
+      revenue: Math.round(revenue * 100) / 100,
+      conversionPct: arr.length ? Math.round((paid.length / arr.length) * 1000) / 10 : 0,
+      avgTicket: paid.length ? Math.round((revenue / paid.length) * 100) / 100 : 0
+    };
+  };
+  const paidAll = all.filter(x => x.status === "paid" && x.productName);
+  const byProduct = {};
+  paidAll.forEach(x => {
+    if (!byProduct[x.productName]) byProduct[x.productName] = { count: 0, revenue: 0 };
+    byProduct[x.productName].count++;
+    byProduct[x.productName].revenue += Number(x.total) || 0;
+  });
+  const topProducts = Object.keys(byProduct)
+    .map(name => ({ name, count: byProduct[name].count, revenue: Math.round(byProduct[name].revenue * 100) / 100 }))
+    .sort((a, b) => b.revenue - a.revenue).slice(0, 5);
+  const days7 = [];
+  for (let i = 6; i >= 0; i--) {
+    const dStart = startOfDay(now - i * day), dEnd = dStart + day;
+    const dayPaid = all.filter(x => x.receivedAt >= dStart && x.receivedAt < dEnd && x.status === "paid");
+    days7.push({
+      date: new Date(dStart).toISOString().slice(0, 10),
+      vendas: dayPaid.length,
+      receita: Math.round(dayPaid.reduce((s, x) => s + (Number(x.total) || 0), 0) * 100) / 100
+    });
+  }
+  return { totalEventos: all.length, hoje: bucket(x => x.receivedAt >= today), ultimos7: bucket(x => x.receivedAt >= week), ultimos30: bucket(x => x.receivedAt >= month), topProducts, days7 };
+}
+
+function eduzzFilterEvents(events, q) {
+  q = q || {};
+  const search = String(q.search || '').toLowerCase().trim();
+  const status = String(q.status || '').toLowerCase().trim();
+  const product = String(q.product || '').toLowerCase().trim();
+  return events.filter(ev => {
+    if (status && ev.status !== status) return false;
+    if (product && !String(ev.productName || '').toLowerCase().includes(product)) return false;
+    if (search) {
+      const hay = [ev.name, ev.phone, ev.email, ev.productName, ev.statusLabel, ev.transactionId, ev.status].join(' ').toLowerCase();
+      if (!hay.includes(search)) return false;
+    }
+    return true;
+  });
+}
+
+app.get("/api/integrations/eduzz/events", (req, res) => {
+  const arr = eduzzLoad();
+  const filtered = eduzzFilterEvents(arr, req.query);
+  const limit = Math.min(Number(req.query.limit) || 50, 500);
+  res.json({ ok: true, total: arr.length, count: filtered.length, items: filtered.slice(-limit).reverse() });
+});
+app.get("/api/integrations/eduzz/events.csv", (req, res) => {
+  const arr = eduzzLoad();
+  const filtered = eduzzFilterEvents(arr, req.query).slice().reverse();
+  const esc = v => { if (v === null || v === undefined) return ''; const s = String(v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  const cols = ['receivedAt', 'status', 'statusLabel', 'name', 'phone', 'email', 'productName', 'total', 'currency', 'transactionId', 'event'];
+  const lines = [cols.join(',')];
+  filtered.forEach(ev => {
+    const iso = ev.receivedAt ? new Date(ev.receivedAt).toISOString() : '';
+    lines.push([iso, esc(ev.status), esc(ev.statusLabel), esc(ev.name), esc(ev.phone), esc(ev.email), esc(ev.productName), esc(ev.total), esc(ev.currency), esc(ev.transactionId), esc(ev.event)].join(','));
+  });
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="eduzz-events-${new Date().toISOString().slice(0, 10)}.csv"`);
+  res.send('\uFEFF' + lines.join('\n'));
+});
+app.get("/api/integrations/eduzz/status", (req, res) => {
+  res.json({
+    ok: true, enabled: true,
+    hmacConfigured: !!EDUZZ_HMAC_SECRET,
+    originSecretConfigured: !!EDUZZ_ORIGIN_SECRET,
+    webhookUrl: `${req.protocol}://${req.get("host")}/api/webhook/eduzz`,
+    eventsCount: eduzzLoad().length, storageFile: EDUZZ_FILE
+  });
+});
+app.get("/api/integrations/eduzz/metrics", (req, res) => { res.json({ ok: true, metrics: eduzzMetrics() }); });
+app.get("/api/integrations/eduzz/rules", (req, res) => { res.json({ ok: true, rules: eduzzRulesLoad() }); });
+app.put("/api/integrations/eduzz/rules", (req, res) => {
+  const arr = Array.isArray(req.body) ? req.body : req.body?.rules;
+  if (!Array.isArray(arr)) return res.status(400).json({ ok: false, error: "body deve ser array" });
+  const clean = arr.map(r => ({ status: String(r.status || '').toLowerCase(), delayMin: Math.max(0, Math.min(60 * 24, Number(r.delayMin) || 0)), enabled: !!r.enabled, message: String(r.message || '') })).filter(r => r.status && r.message);
+  eduzzRulesSave(clean);
+  res.json({ ok: true, rules: clean });
+});
+
+// ============================================================
 // MENSAGENS AGENDADAS (v4.8) - storage JSON + worker interno
 // ============================================================
 const SCHED_FILE = process.env.SCHEDULED_FILE || path.join(__dirname, "data", "scheduled.json");

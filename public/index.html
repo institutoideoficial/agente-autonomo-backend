@@ -294,6 +294,12 @@ body{background:var(--bg);color:var(--text);height:100vh;display:flex;overflow:h
 .int-evt-name{font-weight:600;color:var(--text)}
 .int-evt-meta{font-size:11px;color:var(--text2);margin-top:2px}
 .int-evt-val{color:var(--gold);font-weight:700}
+.plt-tabs{display:flex;gap:6px;margin-bottom:18px;border-bottom:1px solid var(--border);padding-bottom:0}
+.plt-tab{padding:10px 18px;background:transparent;border:none;color:var(--text2);font-size:13px;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;transition:all .15s;display:flex;align-items:center;gap:8px}
+.plt-tab.active{color:var(--gold);border-bottom-color:var(--gold)}
+.plt-tab:hover{color:var(--text)}
+.plt-tab .plt-count{background:var(--panel2);color:var(--text2);font-size:10px;padding:1px 7px;border-radius:8px;font-weight:700}
+.plt-tab.active .plt-count{background:var(--gold3);color:var(--gold)}
 .int-filters{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center}
 .int-filters select,.int-filters input{background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:7px 11px;color:var(--text);font-size:12px;font-family:inherit}
 .int-filters input{min-width:180px;flex:1}
@@ -645,7 +651,11 @@ var QRS_DEFAULTS=[
   {n:'Greenn-BoasVindas', t:'{nome}, que felicidade ter voce com a gente! 🌟\n\nSua matricula em {produto} foi aprovada! ({valor})\n\nEm instantes voce recebe o acesso. Qualquer duvida me chama por aqui mesmo.\n\nBora transformar sua oratoria? ✨'},
   {n:'Greenn-Abandono',   t:'Oi {nome}! Vi que voce comecou a compra do {produto} e parou no meio do caminho. Deu algum problema? Posso te ajudar em alguma etapa?\n\nSe for financeiro, conseguimos te ajudar com parcelamento ou Pix. Qualquer coisa eu resolvo por aqui!'},
   {n:'Greenn-Recusada',   t:'{nome}, sua compra do {produto} nao foi aprovada ({statusLabel}). Podemos tentar outra forma de pagamento? Tenho Pix, cartao (a vista ou parcelado) e boleto.\n\nSe preferir, te passo um link novo.'},
-  {n:'Greenn-Reembolso',  t:'{nome}, confirmei o reembolso do {produto} ({valor}). Chega na sua conta em ate 7 dias uteis do mesmo cartao/metodo que pagou.\n\nSe mudar de ideia e quiser reativar, e so me avisar!'}
+  {n:'Greenn-Reembolso',  t:'{nome}, confirmei o reembolso do {produto} ({valor}). Chega na sua conta em ate 7 dias uteis do mesmo cartao/metodo que pagou.\n\nSe mudar de ideia e quiser reativar, e so me avisar!'},
+  {n:'Eduzz-BoasVindas', t:'{nome}, compra aprovada na Eduzz! 🎉\n\nSeu acesso ao {produto} ({valor}) chega em instantes no seu email. Qualquer duvida estou aqui.\n\nBora comecar? ✨'},
+  {n:'Eduzz-Abandono',   t:'Oi {nome}! Vi que voce comecou a compra do {produto} na Eduzz e parou no meio. Posso te ajudar com o pagamento? Aceito Pix, cartao ou boleto.'},
+  {n:'Eduzz-Boleto-Vencido', t:'{nome}, seu boleto do {produto} venceu. Quer que eu gere um novo agora? Tambem tenho Pix (cai em segundos).'},
+  {n:'Eduzz-Recusada',   t:'{nome}, o pagamento do {produto} nao foi aprovado ({statusLabel}). Podemos tentar outra forma? Tenho Pix, outro cartao, parcelamento ou boleto.'}
 ];
 function loadTemplates(){
   try{
@@ -1309,6 +1319,81 @@ function handleGreennEvent(ev){
   }catch(e){ console.warn('[greenn] handleEvent err', e); }
 }
 
+// === EDUZZ (v4.18) - handler/fetchers espelhando Greenn ===
+function handleEduzzEvent(ev){
+  try{
+    if(!ev) return;
+    // reusa greennMatchOrCreateConv (cria/atualiza conv pelo telefone) mas marca origem
+    var conv = greennMatchOrCreateConv(ev);
+    if(!conv) return;
+    conv.dept = 'Eduzz'; // sobrescreve dept
+    var tag = greennAutoTag(ev.status);
+    if(tag) conv.tag = tag;
+    var emoji = ({paid:'✅',refused:'❌',failed:'❌',refunded:'↩️',chargedback:'⚠️',abandoned:'🛒',expired:'⏰',pending:'⏳'})[String(ev.status||'').toLowerCase()] || 'ℹ️';
+    var valor = ev.total ? ' R$ '+Number(ev.total).toFixed(2).replace('.',',') : '';
+    var noteText = emoji+' Eduzz: '+(ev.statusLabel||ev.status)+(ev.productName?' — '+ev.productName:'')+valor;
+    conv.msgs.push({r:'note', t:noteText, ts:new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})});
+    // Historico Eduzz separado do Greenn (mas usa mesma UI)
+    if(!Array.isArray(conv.greennHistory)) conv.greennHistory = [];
+    conv.greennHistory.push({ status: ev.status, statusLabel: ev.statusLabel, productName: ev.productName, total: ev.total, currency: ev.currency, transactionId: ev.transactionId, at: ev.receivedAt || Date.now(), source: 'eduzz' });
+    if(conv.greennHistory.length > 20) conv.greennHistory = conv.greennHistory.slice(-20);
+    conv.greennLast = conv.greennHistory[conv.greennHistory.length-1];
+    if(typeof renderSB==='function') renderSB();
+    if(window.cur === conv.id){
+      if(typeof renderMsgs==='function') renderMsgs(conv.id);
+      if(typeof renderRP==='function') renderRP(conv.id);
+    }
+    if(typeof toast==='function') toast(emoji+' '+ev.name+': '+ev.statusLabel+(valor?valor:''));
+    if(typeof playBeep==='function' && ev.status==='paid') playBeep();
+    if(typeof showNotif==='function') showNotif('Eduzz — '+ev.statusLabel, ev.name+(valor?valor:''));
+  }catch(e){ console.warn('[eduzz] handleEvent err', e); }
+}
+async function fetchEduzzStatus(){ try{ var r=await fetch('/api/integrations/eduzz/status'); return await r.json(); }catch(e){ return null; } }
+async function fetchEduzzEvents(limit, q){
+  try{
+    var qs='limit='+(limit||50);
+    if(q){ if(q.status)qs+='&status='+encodeURIComponent(q.status); if(q.product)qs+='&product='+encodeURIComponent(q.product); if(q.search)qs+='&search='+encodeURIComponent(q.search); }
+    var r=await fetch('/api/integrations/eduzz/events?'+qs);
+    var d=await r.json();
+    return { items: d.items||[], total: d.total||0, count: d.count||0 };
+  }catch(e){ return { items:[], total:0, count:0 }; }
+}
+async function fetchEduzzRules(){ try{ var r=await fetch('/api/integrations/eduzz/rules'); var d=await r.json(); return d.rules||[]; }catch(e){ return []; } }
+async function eduzzRulesPut(rules){
+  var r=await fetch('/api/integrations/eduzz/rules',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(rules)});
+  return r.json();
+}
+var _eduzzRulesCache = [];
+function eduzzRuleToggle(status){
+  _eduzzRulesCache.forEach(function(r){ if(r.status===status) r.enabled=!r.enabled; });
+  eduzzRulesPut(_eduzzRulesCache).then(function(d){ if(d.ok){ if(typeof toast==='function') toast('Regra Eduzz salva'); renderIntegracoesPage(document.getElementById('main')); } });
+}
+function eduzzRuleToggleBody(status){ var el=document.getElementById('erb-'+status); if(el) el.classList.toggle('open'); }
+function eduzzRuleSaveFields(status){
+  var delay=Number(document.getElementById('erdel-'+status).value)||0;
+  var msg=document.getElementById('ermsg-'+status).value;
+  _eduzzRulesCache.forEach(function(r){ if(r.status===status){ r.delayMin=delay; r.message=msg; } });
+  eduzzRulesPut(_eduzzRulesCache).then(function(d){ if(d.ok){ if(typeof toast==='function') toast('Regra atualizada'); } });
+}
+var _eduzzFilters = { status:'', product:'', search:'' };
+function eduzzFilterChange(field, value){
+  _eduzzFilters[field]=value;
+  clearTimeout(window._eduzzFilterTimer);
+  window._eduzzFilterTimer = setTimeout(function(){ renderIntegracoesPage(document.getElementById('main')); }, field==='status'?0:300);
+}
+function eduzzFiltersClear(){ _eduzzFilters = { status:'', product:'', search:'' }; renderIntegracoesPage(document.getElementById('main')); }
+function eduzzCsvUrl(){
+  var qs=[];
+  if(_eduzzFilters.status) qs.push('status='+encodeURIComponent(_eduzzFilters.status));
+  if(_eduzzFilters.product) qs.push('product='+encodeURIComponent(_eduzzFilters.product));
+  if(_eduzzFilters.search) qs.push('search='+encodeURIComponent(_eduzzFilters.search));
+  return '/api/integrations/eduzz/events.csv'+(qs.length?'?'+qs.join('&'):'');
+}
+
+// Aba atual (persistida em localStorage)
+var IMP_PLATFORM_KEY = 'imp_int_platform_v1';
+function intPlatformCurrent(){ try{ return localStorage.getItem(IMP_PLATFORM_KEY) || 'greenn'; }catch(e){ return 'greenn'; } }
+function intPlatformSet(p){ try{ localStorage.setItem(IMP_PLATFORM_KEY, p); }catch(e){} renderIntegracoesPage(document.getElementById('main')); }
 async function fetchGreennStatus(){
   try{
     var r = await fetch('/api/integrations/greenn/status');
@@ -1378,10 +1463,97 @@ function greennRuleSaveFields(status){
 }
 
 async function renderIntegracoesPage(main){
-  var st = await fetchGreennStatus();
+  var platform = intPlatformCurrent();
+  var greennSt = await fetchGreennStatus();
+  var eduzzSt = await fetchEduzzStatus();
+
+  var header = '<div class="int-page">'+
+    '<h2>🔌 Integrações</h2>'+
+    '<div class="int-sub">Conecte plataformas de pagamento/cursos. Cada evento vira conversa automatica com tag colorida + nota.</div>'+
+    '<div class="plt-tabs">'+
+      '<button class="plt-tab '+(platform==='greenn'?'active':'')+'" onclick="intPlatformSet(\'greenn\')">'+
+        '🌱 Greenn <span class="plt-count">'+((greennSt&&greennSt.eventsCount)||0)+'</span>'+
+      '</button>'+
+      '<button class="plt-tab '+(platform==='eduzz'?'active':'')+'" onclick="intPlatformSet(\'eduzz\')">'+
+        '📘 Eduzz <span class="plt-count">'+((eduzzSt&&eduzzSt.eventsCount)||0)+'</span>'+
+      '</button>'+
+    '</div>';
+
+  if(platform === 'eduzz'){
+    var _eg = await fetchEduzzEvents(100, _eduzzFilters);
+    var events = _eg.items; var totalAll = _eg.total;
+    _eduzzRulesCache = await fetchEduzzRules();
+    var rulesHtml = _eduzzRulesCache.map(function(r){
+      var lblMap = {paid:'Aprovada',refused:'Recusada',abandoned:'Abandonou carrinho',refunded:'Reembolsada',chargedback:'Chargeback',expired:'Boleto venceu',cancelled:'Cancelada',pending:'Pendente'};
+      var lbl = lblMap[r.status] || r.status;
+      return '<div class="rule-row">'+
+        '<div class="rule-head" onclick="eduzzRuleToggleBody(\''+esc(r.status)+'\')">'+
+          '<span class="rule-stt '+esc(r.status)+'">'+esc(lbl)+'</span>'+
+          '<div class="rule-info"><div class="rn">Quando status = '+esc(r.status)+'</div><div class="rd">Agenda em '+(r.delayMin||0)+' min &middot; '+(r.enabled?'ativo':'desativado')+'</div></div>'+
+          '<div class="rule-toggle '+(r.enabled?'on':'')+'" onclick="event.stopPropagation();eduzzRuleToggle(\''+esc(r.status)+'\')"></div>'+
+        '</div>'+
+        '<div class="rule-body" id="erb-'+esc(r.status)+'">'+
+          '<label style="font-size:11px;color:var(--text2)">Atraso (minutos):</label> '+
+          '<input type="number" id="erdel-'+esc(r.status)+'" value="'+Number(r.delayMin||0)+'" min="0" max="1440">'+
+          '<textarea id="ermsg-'+esc(r.status)+'">'+esc(r.message||'')+'</textarea>'+
+          '<div class="rule-actions"><button class="primary" onclick="eduzzRuleSaveFields(\''+esc(r.status)+'\')">Salvar</button></div>'+
+        '</div>'+
+      '</div>';
+    }).join('');
+
+    var authStatus = (eduzzSt && eduzzSt.hmacConfigured)
+      ? '<span style="color:#10b981">✓ HMAC configurado (env EDUZZ_HMAC_SECRET) - versao v3</span>'
+      : (eduzzSt && eduzzSt.originSecretConfigured)
+        ? '<span style="color:#10b981">✓ origin_secret configurado - versao v1 legado</span>'
+        : '<span style="color:#f59e0b">⚠ Sem autenticacao (modo aberto). Configure EDUZZ_HMAC_SECRET ou EDUZZ_ORIGIN_SECRET.</span>';
+
+    header += '<div class="int-card">'+
+      '<h3>📘 Eduzz <span class="int-badge">Ativa</span></h3>'+
+      '<div class="int-sub" style="margin-bottom:14px">Plataforma de cursos. Suporta webhook v1 (flat, origin_secret) e v3 (HMAC x-signature). Configure em integrations.eduzz.com/webhook/configs.</div>'+
+      '<div class="int-row"><strong>Webhook URL:</strong><div class="int-url" id="eduzz-url">'+esc((eduzzSt&&eduzzSt.webhookUrl)||location.origin+'/api/webhook/eduzz')+'</div><button class="int-cp" onclick="navigator.clipboard.writeText(document.getElementById(\'eduzz-url\').textContent).then(function(){toast(\'URL copiada\')})">Copiar</button></div>'+
+      '<div class="int-row"><strong>Autenticacao:</strong>&nbsp;'+authStatus+'</div>'+
+      '<div class="int-row"><strong>Eventos recebidos:</strong>&nbsp;'+((eduzzSt&&eduzzSt.eventsCount)||0)+'</div>'+
+    '</div>'+
+    '<div class="int-card">'+
+      '<h3>Regras de auto-follow-up (Eduzz) <span class="int-badge">backend</span></h3>'+
+      '<div class="int-sub" style="margin-bottom:12px">Independente das regras Greenn. Use {nome}, {produto}, {valor}, {statusLabel}.</div>'+
+      '<div class="rules-list">'+rulesHtml+'</div>'+
+    '</div>'+
+    '<div class="int-events">'+
+      '<h3>Eventos '+(totalAll?'('+events.length+' / '+totalAll+' total)':'('+events.length+')')+'</h3>'+
+      '<div class="int-filters">'+
+        '<select onchange="eduzzFilterChange(\'status\', this.value)">'+
+          '<option value="">Todos status</option>'+
+          ['paid','refused','abandoned','refunded','chargedback','expired','cancelled','pending'].map(function(s){
+            return '<option value="'+s+'"'+(_eduzzFilters.status===s?' selected':'')+'>'+esc(s)+'</option>';
+          }).join('')+
+        '</select>'+
+        '<input type="text" placeholder="Filtrar produto..." value="'+esc(_eduzzFilters.product)+'" oninput="eduzzFilterChange(\'product\', this.value)">'+
+        '<input type="text" placeholder="Buscar..." value="'+esc(_eduzzFilters.search)+'" oninput="eduzzFilterChange(\'search\', this.value)">'+
+        (_eduzzFilters.status||_eduzzFilters.product||_eduzzFilters.search ? '<button onclick="eduzzFiltersClear()" style="background:var(--panel2);color:var(--text);border:none;border-radius:6px;padding:7px 12px;cursor:pointer;font-size:12px">Limpar</button>' : '')+
+        '<a class="int-csv" href="'+eduzzCsvUrl()+'" download>📥 Exportar CSV</a>'+
+      '</div>';
+    if(events.length===0){
+      header += '<div style="color:var(--text2);text-align:center;padding:24px;font-style:italic">Nenhum evento ainda.</div>';
+    } else {
+      events.forEach(function(ev){
+        var when = new Date(ev.receivedAt).toLocaleString('pt-BR');
+        var valor = ev.total ? ' &middot; <span class="int-evt-val">R$ '+Number(ev.total).toFixed(2)+'</span>' : '';
+        header += '<div class="int-evt">'+
+          '<span class="int-evt-status '+esc(ev.status||'unknown')+'">'+esc(ev.statusLabel||ev.status||'?')+'</span>'+
+          '<div class="int-evt-info"><div class="int-evt-name">'+esc(ev.name||ev.email||ev.phone||'(sem nome)')+(ev.productName?' &middot; '+esc(ev.productName):'')+'</div>'+
+          '<div class="int-evt-meta">'+when+(ev.phone?' &middot; '+esc(ev.phone):'')+valor+'</div></div>'+
+        '</div>';
+      });
+    }
+    header += '</div></div>';
+    main.style.cssText = ''; main.innerHTML = header;
+    return;
+  }
+
+  // --- Aba Greenn (original) ---
   var _gr = await fetchGreennEvents(100, _greennFilters);
-  var events = _gr.items;
-  var totalAll = _gr.total;
+  var events = _gr.items; var totalAll = _gr.total;
   _greennRulesCache = await greennRulesFetch();
   var rulesHtml = _greennRulesCache.map(function(r){
     var lblMap = {paid:'Aprovada',approved:'Aprovada',refused:'Recusada',declined:'Recusada',failed:'Falhou',refunded:'Reembolsada',abandoned:'Abandonou carrinho',chargedback:'Chargeback',cancelled:'Cancelada',pending:'Pendente',waiting_payment:'Aguardando'};
@@ -1389,86 +1561,74 @@ async function renderIntegracoesPage(main){
     return '<div class="rule-row">'+
       '<div class="rule-head" onclick="greennRuleToggleBody(\''+esc(r.status)+'\')">'+
         '<span class="rule-stt '+esc(r.status)+'">'+esc(lbl)+'</span>'+
-        '<div class="rule-info"><div class="rn">Quando status = '+esc(r.status)+'</div>'+
-          '<div class="rd">Agenda em '+(r.delayMin||0)+' min &middot; '+(r.enabled?'ativo':'desativado')+'</div></div>'+
+        '<div class="rule-info"><div class="rn">Quando status = '+esc(r.status)+'</div><div class="rd">Agenda em '+(r.delayMin||0)+' min &middot; '+(r.enabled?'ativo':'desativado')+'</div></div>'+
         '<div class="rule-toggle '+(r.enabled?'on':'')+'" onclick="event.stopPropagation();greennRuleToggle(\''+esc(r.status)+'\')"></div>'+
       '</div>'+
       '<div class="rule-body" id="rb-'+esc(r.status)+'">'+
         '<label style="font-size:11px;color:var(--text2)">Atraso (minutos):</label> '+
         '<input type="number" id="rdel-'+esc(r.status)+'" value="'+Number(r.delayMin||0)+'" min="0" max="1440">'+
         '<textarea id="rmsg-'+esc(r.status)+'">'+esc(r.message||'')+'</textarea>'+
-        '<div class="rule-actions">'+
-          '<button class="primary" onclick="greennRuleSaveFields(\''+esc(r.status)+'\')">Salvar</button>'+
-        '</div>'+
+        '<div class="rule-actions"><button class="primary" onclick="greennRuleSaveFields(\''+esc(r.status)+'\')">Salvar</button></div>'+
       '</div>'+
     '</div>';
   }).join('');
-  var url = (st && st.webhookUrl) || (location.origin + '/api/webhook/greenn');
-  var tokenStatus = (st && st.tokenConfigured)
+
+  var url = (greennSt && greennSt.webhookUrl) || (location.origin + '/api/webhook/greenn');
+  var tokenStatus = (greennSt && greennSt.tokenConfigured)
     ? '<span style="color:#10b981">✓ Configurado (env GREENN_WEBHOOK_TOKEN)</span>'
     : '<span style="color:#f59e0b">⚠ Sem token (modo aberto). Configure GREENN_WEBHOOK_TOKEN no servidor pra seguranca.</span>';
-  var html = '<div class="int-page">'+
-    '<h2>🔌 Integrações</h2>'+
-    '<div class="int-sub">Conecte plataformas externas pra disparar eventos no CRM. Cada evento vira nota automatica na conversa do contato e aplica etiqueta colorida.</div>'+
 
-    '<div class="int-card">'+
-      '<h3>Greenn <span class="int-badge">Ativa</span></h3>'+
-      '<div class="int-sub" style="margin-bottom:14px">Plataforma de pagamento. Recebe eventos de venda/assinatura/checkout. Configure o webhook no painel da Greenn em Produtos &gt; seu produto &gt; Conteudos &gt; Adicionar &gt; Sistema externo &gt; Webhook.</div>'+
-      '<div class="int-row"><strong>Webhook URL:</strong><div class="int-url" id="greenn-url">'+esc(url)+'</div><button class="int-cp" onclick="navigator.clipboard.writeText(document.getElementById(\'greenn-url\').textContent).then(function(){toast(\'URL copiada\')})">Copiar</button></div>'+
-      '<div class="int-row"><strong>Token (header):</strong><div class="int-url">X-Webhook-Token: ••••••••</div></div>'+
-      '<div class="int-row"><strong>Status do token:</strong>&nbsp;'+tokenStatus+'</div>'+
-      '<div class="int-row"><strong>Eventos recebidos:</strong>&nbsp;'+(st?st.eventsCount:0)+'</div>'+
+  header += '<div class="int-card">'+
+    '<h3>🌱 Greenn <span class="int-badge">Ativa</span></h3>'+
+    '<div class="int-sub" style="margin-bottom:14px">Plataforma de pagamento. Configure em Produtos > seu produto > Conteudos > Sistema externo > Webhook.</div>'+
+    '<div class="int-row"><strong>Webhook URL:</strong><div class="int-url" id="greenn-url">'+esc(url)+'</div><button class="int-cp" onclick="navigator.clipboard.writeText(document.getElementById(\'greenn-url\').textContent).then(function(){toast(\'URL copiada\')})">Copiar</button></div>'+
+    '<div class="int-row"><strong>Token (header):</strong><div class="int-url">X-Webhook-Token: ••••••••</div></div>'+
+    '<div class="int-row"><strong>Status do token:</strong>&nbsp;'+tokenStatus+'</div>'+
+    '<div class="int-row"><strong>Eventos recebidos:</strong>&nbsp;'+(greennSt?greennSt.eventsCount:0)+'</div>'+
+  '</div>'+
+  '<div class="int-card">'+
+    '<h3>Etiquetas automaticas</h3>'+
+    '<div class="int-sub">Cada status vira uma etiqueta colorida no contato:</div>'+
+    '<div style="display:flex;flex-wrap:wrap;gap:6px">'+
+      ['comprou:#10b981','recusada:#ef4444','reembolso:#f59e0b','chargeback:#dc2626','abandonou:#8b5cf6','aguardando:#3b82f6'].map(function(s){
+        var p=s.split(':'); return '<span class="tag-chip" style="background:'+p[1]+';font-size:10px;padding:3px 10px">'+p[0]+'</span>';
+      }).join('')+
     '</div>'+
-
-    '<div class="int-card">'+
-      '<h3>Etiquetas automaticas</h3>'+
-      '<div class="int-sub">Cada status vira uma etiqueta colorida no contato:</div>'+
-      '<div style="display:flex;flex-wrap:wrap;gap:6px">'+
-        ['comprou:#10b981','recusada:#ef4444','reembolso:#f59e0b','chargeback:#dc2626','abandonou:#8b5cf6','aguardando:#3b82f6'].map(function(s){
-          var p=s.split(':'); return '<span class="tag-chip" style="background:'+p[1]+';font-size:10px;padding:3px 10px">'+p[0]+'</span>';
+  '</div>'+
+  '<div class="int-card">'+
+    '<h3>Regras de auto-follow-up <span class="int-badge">backend</span></h3>'+
+    '<div class="int-sub" style="margin-bottom:12px">Quando um evento chega, o servidor agenda automaticamente. Use {nome}, {produto}, {valor}, {statusLabel}.</div>'+
+    '<div class="rules-list" id="rules-list">'+rulesHtml+'</div>'+
+  '</div>'+
+  '<div class="int-events">'+
+    '<h3>Eventos '+(totalAll?'('+events.length+' / '+totalAll+' total)':'('+events.length+')')+'</h3>'+
+    '<div class="int-filters">'+
+      '<select onchange="greennFilterChange(\'status\', this.value)">'+
+        '<option value="">Todos status</option>'+
+        ['paid','approved','refused','declined','failed','refunded','chargedback','abandoned','pending'].map(function(s){
+          return '<option value="'+s+'"'+(_greennFilters.status===s?' selected':'')+'>'+esc(s)+'</option>';
         }).join('')+
-      '</div>'+
-    '</div>'+
-
-    '<div class="int-card">'+
-      '<h3>Regras de auto-follow-up <span class="int-badge">backend</span></h3>'+
-      '<div class="int-sub" style="margin-bottom:12px">Quando um evento chega, o servidor agenda automaticamente o envio da mensagem (via Bravos) no tempo definido. Funciona mesmo com o navegador fechado. Use {nome}, {produto}, {valor}, {statusLabel} que expandem automatico.</div>'+
-      '<div class="rules-list" id="rules-list">'+
-      rulesHtml+
-      '</div>'+
-    '</div>'+
-    '<div class="int-events">'+
-      '<h3>Eventos '+(totalAll?'('+events.length+' / '+totalAll+' total)':'('+events.length+')')+'</h3>'+
-      '<div class="int-filters">'+
-        '<select onchange="greennFilterChange(\'status\', this.value)">'+
-          '<option value="">Todos status</option>'+
-          ['paid','approved','refused','declined','failed','refunded','chargedback','abandoned','pending'].map(function(s){
-            return '<option value="'+s+'"'+(_greennFilters.status===s?' selected':'')+'>'+esc(s)+'</option>';
-          }).join('')+
-        '</select>'+
-        '<input type="text" placeholder="Filtrar por produto..." value="'+esc(_greennFilters.product)+'" oninput="greennFilterChange(\'product\', this.value)">'+
-        '<input type="text" placeholder="Buscar em nome/telefone/email/tx..." value="'+esc(_greennFilters.search)+'" oninput="greennFilterChange(\'search\', this.value)">'+
-        (_greennFilters.status||_greennFilters.product||_greennFilters.search ? '<button onclick="greennFiltersClear()" style="background:var(--panel2);color:var(--text);border:none;border-radius:6px;padding:7px 12px;cursor:pointer;font-size:12px">Limpar</button>' : '')+
-        '<a class="int-csv" href="'+greennCsvUrl()+'" download>📥 Exportar CSV</a>'+
-      '</div>';
+      '</select>'+
+      '<input type="text" placeholder="Filtrar por produto..." value="'+esc(_greennFilters.product)+'" oninput="greennFilterChange(\'product\', this.value)">'+
+      '<input type="text" placeholder="Buscar em nome/telefone/email/tx..." value="'+esc(_greennFilters.search)+'" oninput="greennFilterChange(\'search\', this.value)">'+
+      (_greennFilters.status||_greennFilters.product||_greennFilters.search ? '<button onclick="greennFiltersClear()" style="background:var(--panel2);color:var(--text);border:none;border-radius:6px;padding:7px 12px;cursor:pointer;font-size:12px">Limpar</button>' : '')+
+      '<a class="int-csv" href="'+greennCsvUrl()+'" download>📥 Exportar CSV</a>'+
+    '</div>';
   if(events.length===0){
-    html += '<div style="color:var(--text2);text-align:center;padding:24px;font-style:italic">Nenhum evento ainda. Configure o webhook no painel da Greenn pra comecar.</div>';
+    header += '<div style="color:var(--text2);text-align:center;padding:24px;font-style:italic">Nenhum evento ainda. Configure o webhook no painel da Greenn.</div>';
   } else {
     events.forEach(function(ev){
       var when = new Date(ev.receivedAt).toLocaleString('pt-BR');
       var valor = ev.total ? ' &middot; <span class="int-evt-val">R$ '+Number(ev.total).toFixed(2)+'</span>' : '';
-      html += '<div class="int-evt">'+
+      header += '<div class="int-evt">'+
         '<span class="int-evt-status '+esc(ev.status||'unknown')+'">'+esc(ev.statusLabel||ev.status||'?')+'</span>'+
-        '<div class="int-evt-info">'+
-          '<div class="int-evt-name">'+esc(ev.name||ev.email||ev.phone||'(sem nome)')+(ev.productName?' &middot; '+esc(ev.productName):'')+'</div>'+
-          '<div class="int-evt-meta">'+when+(ev.phone?' &middot; '+esc(ev.phone):'')+valor+'</div>'+
-        '</div>'+
+        '<div class="int-evt-info"><div class="int-evt-name">'+esc(ev.name||ev.email||ev.phone||'(sem nome)')+(ev.productName?' &middot; '+esc(ev.productName):'')+'</div>'+
+        '<div class="int-evt-meta">'+when+(ev.phone?' &middot; '+esc(ev.phone):'')+valor+'</div></div>'+
       '</div>';
     });
   }
-  html += '</div></div>';
-  main.style.cssText = '';
-  main.innerHTML = html;
+  header += '</div></div>';
+  main.style.cssText = ''; main.innerHTML = header;
 }
 
 function computeMetrics(){
@@ -2135,6 +2295,36 @@ async function renderReports(main){
     html += '</div>';
   }
 
+  // v4.18: Secao Eduzz no dashboard
+  try{
+    var egr = await fetch('/api/integrations/eduzz/metrics'); var egj = await egr.json();
+    var em = egj.metrics;
+    if(em && em.totalEventos > 0){
+      var maxV2 = Math.max.apply(Math, [1].concat(em.days7.map(function(x){return x.vendas;})));
+      html += '<div class="dash-section" style="border-color:#3b82f6;border-width:1px">'+
+        '<h3 style="color:#60a5fa">📘 Vendas Eduzz</h3>'+
+        '<div class="dash-grid" style="margin-bottom:14px">'+
+          '<div class="dash-card"><div class="dc-lbl">Receita hoje</div><div class="dc-val" style="color:#10b981">'+fmtBRL(em.hoje.revenue)+'</div><div class="dc-hint">'+em.hoje.paid+' aprovadas</div></div>'+
+          '<div class="dash-card"><div class="dc-lbl">Receita 7 dias</div><div class="dc-val" style="color:#10b981">'+fmtBRL(em.ultimos7.revenue)+'</div><div class="dc-hint">'+em.ultimos7.paid+' aprovadas · ticket medio '+fmtBRL(em.ultimos7.avgTicket)+'</div></div>'+
+          '<div class="dash-card"><div class="dc-lbl">Receita 30 dias</div><div class="dc-val" style="color:#10b981">'+fmtBRL(em.ultimos30.revenue)+'</div><div class="dc-hint">'+em.ultimos30.paid+' aprovadas</div></div>'+
+          '<div class="dash-card"><div class="dc-lbl">Conversao 30d</div><div class="dc-val">'+(em.ultimos30.conversionPct||0)+'<span style="font-size:14px;color:var(--text2)"> %</span></div><div class="dc-hint">aprovadas / total eventos</div></div>'+
+          '<div class="dash-card accent-red"><div class="dc-lbl">Boleto vencido</div><div class="dc-val">'+em.ultimos7.expired+'</div><div class="dc-hint">ultimos 7 dias</div></div>'+
+          '<div class="dash-card"><div class="dc-lbl">Abandonadas</div><div class="dc-val" style="color:#8b5cf6">'+em.ultimos7.abandoned+'</div><div class="dc-hint">carrinho</div></div>'+
+        '</div>';
+      if(em.topProducts && em.topProducts.length){
+        html += '<h3 style="margin-bottom:10px">Top produtos Eduzz (30d)</h3>';
+        var topMax2 = Math.max.apply(Math, [1].concat(em.topProducts.map(function(p){return p.revenue;})));
+        em.topProducts.forEach(function(p){
+          var pct2 = topMax2>0 ? Math.round(p.revenue/topMax2*100) : 0;
+          html += '<div class="dash-bar"><div class="dash-bar-lbl" style="width:180px">'+esc(p.name)+'</div>'+
+                  '<div class="dash-bar-fill"><div style="width:'+pct2+'%;background:#3b82f6"></div></div>'+
+                  '<div class="dash-bar-num" style="min-width:90px">'+fmtBRL(p.revenue)+' ('+p.count+')</div></div>';
+        });
+      }
+      html += '</div>';
+    }
+  }catch(e){}
+
   html += '<div class="dash-section">'+
       '<h3>Por departamento</h3>'+
       Object.keys(m.porDept).sort().map(function(k){return bar(k, m.porDept[k], deptMax, 'var(--gold)');}).join('') ||
@@ -2354,6 +2544,7 @@ setTimeout(checkStatus,2000);
         if(evt.type === "whatsapp_ready"){ checkConnection(); return; }
         if(evt.type === "whatsapp_disconnected"){ checkConnection(); toast("WhatsApp desconectou"); return; }
         if(evt.type === "greenn_event"){ if(typeof handleGreennEvent==='function') handleGreennEvent(evt.data); return; }
+        if(evt.type === "eduzz_event"){ if(typeof handleEduzzEvent==='function') handleEduzzEvent(evt.data); return; }
         if(evt.type === "message_in"){ handleRealRow(evt.data, false); return; }
         if(evt.type === "message_out"){ handleRealRow(evt.data, true); return; }
         // fallback legado: backend antigo emitia sempre "new_message" com payload embrulhado
