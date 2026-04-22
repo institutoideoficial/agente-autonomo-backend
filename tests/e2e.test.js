@@ -311,6 +311,48 @@ async function run(){
     expect(html.includes("function trashEmpty"), "Lixeira: esvaziar");
     expect(html.includes("TRASH_TTL_DAYS"), "Lixeira: TTL configuravel");
     expect(html.includes("IMP_TRASH_KEY"), "Lixeira: localStorage");
+    // Agendados v4.8 (frontend)
+    expect(html.includes("function renderAgendaPage"), "Agenda: render");
+    expect(html.includes("function agendaCreate"), "Agenda: create");
+    expect(html.includes("function agendaCancel"), "Agenda: cancel");
+    expect(html.includes("function agendaSubmit"), "Agenda: submit");
+  }
+
+  console.log("\n== Teste: API agendamento (v4.8) ==");
+  {
+    // Cria
+    const sendAt = Date.now() + 60 * 60 * 1000;
+    const r1 = await fetch(`http://127.0.0.1:${CRM_PORT}/api/scheduled`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone: '5511999990001', message: 'teste', sendAt: sendAt, note: 'unit' })
+    });
+    const j1 = await r1.json();
+    expect(j1.ok === true, "criar OK");
+    expect(j1.item && j1.item.status === 'pending', "status pending");
+    expect(j1.item && j1.item.id && j1.item.id.startsWith('sch_'), "id gerado");
+    const id = j1.item.id;
+    // Lista
+    const r2 = await fetch(`http://127.0.0.1:${CRM_PORT}/api/scheduled?status=pending`);
+    const j2 = await r2.json();
+    expect(j2.ok === true && Array.isArray(j2.items), "list ok");
+    expect(j2.items.some(x => x.id === id), "item recem-criado aparece na lista");
+    // Cancela
+    const r3 = await fetch(`http://127.0.0.1:${CRM_PORT}/api/scheduled/${id}`, { method: 'DELETE' });
+    const j3 = await r3.json();
+    expect(j3.ok === true, "cancelar OK");
+    expect(j3.item && j3.item.status === 'cancelled', "status cancelled");
+    // Validacoes
+    const r4 = await fetch(`http://127.0.0.1:${CRM_PORT}/api/scheduled`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({})
+    });
+    expect(r4.status === 400, "criar sem campos -> 400");
+    const r5 = await fetch(`http://127.0.0.1:${CRM_PORT}/api/scheduled`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone: '5511', message: 'x', sendAt: 100 })
+    });
+    expect(r5.status === 400, "sendAt no passado -> 400");
+    const r6 = await fetch(`http://127.0.0.1:${CRM_PORT}/api/scheduled/inexistente`, { method: 'DELETE' });
+    expect(r6.status === 404, "cancelar inexistente -> 404");
   }
 
   console.log("\n== Teste: GET / serve welcome.html ==");

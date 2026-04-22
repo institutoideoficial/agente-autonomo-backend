@@ -149,7 +149,102 @@ app.post("/api/webhook/bravos", async (req, res) => {
   }
 });
 
+// ============================================================
+// MENSAGENS AGENDADAS (v4.8) - storage JSON + worker interno
+// ============================================================
+const fs = require("fs");
+const SCHED_FILE = process.env.SCHEDULED_FILE || path.join(__dirname, "data", "scheduled.json");
+fs.mkdirSync(path.dirname(SCHED_FILE), { recursive: true });
+function schedLoad() {
+  try { return JSON.parse(fs.readFileSync(SCHED_FILE, "utf8")); } catch { return []; }
+}
+function schedSave(arr) {
+  try { fs.writeFileSync(SCHED_FILE, JSON.stringify(arr, null, 2)); } catch (e) { console.error("[sched]", e?.message); }
+}
+function schedNewId() { return "sch_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8); }
+
+// Lista agendamentos (com filtros opcionais)
+app.get("/api/scheduled", (req, res) => {
+  const arr = schedLoad();
+  const status = req.query.status; // pending | sent | failed | cancelled
+  const filtered = status ? arr.filter(x => x.status === status) : arr;
+  res.json({ ok: true, count: filtered.length, items: filtered });
+});
+
+// Cria agendamento
+app.post("/api/scheduled", (req, res) => {
+  const { phone, message, sendAt, note } = req.body || {};
+  if (!phone || !message || !sendAt) {
+    return res.status(400).json({ ok: false, error: "phone, message, sendAt sao obrigatorios" });
+  }
+  const ts = Number(sendAt);
+  if (!ts || isNaN(ts)) return res.status(400).json({ ok: false, error: "sendAt deve ser unix ms" });
+  if (ts < Date.now() - 30000) return res.status(400).json({ ok: false, error: "sendAt no passado" });
+  const arr = schedLoad();
+  const item = {
+    id: schedNewId(),
+    phone: String(phone).replace(/\D/g, ""),
+    message: String(message),
+    note: note ? String(note) : "",
+    sendAt: ts,
+    status: "pending",
+    createdAt: Date.now(),
+    sentAt: null,
+    error: null
+  };
+  arr.push(item);
+  schedSave(arr);
+  res.json({ ok: true, item });
+});
+
+// Cancela agendamento (so se ainda pending)
+app.delete("/api/scheduled/:id", (req, res) => {
+  const arr = schedLoad();
+  const idx = arr.findIndex(x => x.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ ok: false, error: "nao encontrado" });
+  if (arr[idx].status !== "pending") return res.status(409).json({ ok: false, error: "nao eh mais pending: " + arr[idx].status });
+  arr[idx].status = "cancelled";
+  arr[idx].cancelledAt = Date.now();
+  schedSave(arr);
+  res.json({ ok: true, item: arr[idx] });
+});
+
+// Worker interno: a cada 30s checa pendentes que venceram e dispara
+async function schedTick() {
+  const arr = schedLoad();
+  const now = Date.now();
+  const due = arr.filter(x => x.status === "pending" && x.sendAt <= now);
+  if (due.length === 0) return;
+  for (const item of due) {
+    try {
+      const r = await fetch(`${BRAVOS_URL}/send-message`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${BRAVOS_TOKEN}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ chatId: `${item.phone}@c.us`, message: item.message })
+      });
+      const data = await r.json();
+      if (r.ok && (data.ok !== false)) {
+        item.status = "sent";
+        item.sentAt = Date.now();
+        item.messageId = data.messageId || null;
+      } else {
+        item.status = "failed";
+        item.error = data.error || `HTTP ${r.status}`;
+      }
+    } catch (e) {
+      item.status = "failed";
+      item.error = e?.message || String(e);
+    }
+  }
+  schedSave(arr);
+  console.log(`[sched] processou ${due.length} agendamento(s)`);
+}
+setInterval(schedTick, 30 * 1000); // 30s
+// Roda 1 vez ao subir (catch-up)
+setTimeout(schedTick, 5 * 1000);
+
 app.listen(PORT, () => {
   console.log(`[speakers-crm] rodando na porta ${PORT}`);
   console.log(`[speakers-crm] Bravos URL: ${BRAVOS_URL}`);
+  console.log(`[speakers-crm] Scheduled storage: ${SCHED_FILE}`);
 });
