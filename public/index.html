@@ -1142,6 +1142,18 @@ async function agendaCancel(id){
     alert('Erro: '+(d.error||'desconhecido'));
   }
 }
+// v4.17: retry de agendamento falhado ou ja enviado
+async function agendaRetry(id){
+  if(!confirm('Refazer este envio? Sera criado novo agendamento pra daqui 5s.')) return;
+  var r = await fetch('/api/scheduled/'+encodeURIComponent(id)+'/retry', { method:'POST' });
+  var d = await r.json();
+  if(d.ok){
+    if(typeof toast==='function') toast('Reenviado (novo id: '+d.item.id+')');
+    renderAgendaPage(document.getElementById('main'));
+  } else {
+    alert('Erro: '+(d.error||'desconhecido'));
+  }
+}
 function agendaSetFilter(f){ _agFilter=f; renderAgendaPage(document.getElementById('main')); }
 
 async function renderAgendaPage(main){
@@ -1184,7 +1196,8 @@ async function renderAgendaPage(main){
           '<div class="body">'+esc(it.message)+'</div>'+
           (it.error?'<div class="err">Erro: '+esc(it.error)+'</div>':'')+
         '</div>'+
-        (it.status==='pending' ? '<div class="ag-act"><button onclick="agendaCancel(\''+esc(it.id)+'\')">Cancelar</button></div>' : '')+
+        (it.status==='pending' ? '<div class="ag-act"><button onclick="agendaCancel(\''+esc(it.id)+'\')">Cancelar</button></div>' :
+         (it.status==='failed' || it.status==='sent') ? '<div class="ag-act"><button onclick="agendaRetry(\''+esc(it.id)+'\')" title="Reenviar">↻ Retry</button></div>' : '')+
       '</div>';
     });
   }
