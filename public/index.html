@@ -2006,7 +2006,7 @@ function renderContacts(main){
   main.innerHTML=html;
 }
 
-function renderReports(main){
+async function renderReports(main){
   var m = computeMetrics();
   function bar(label, count, max, color){
     var pct = max>0 ? Math.round(count/max*100) : 0;
@@ -2016,6 +2016,12 @@ function renderReports(main){
   }
   var deptMax = Math.max.apply(Math, [1].concat(Object.values(m.porDept)));
   var tagMax  = Math.max.apply(Math, [1].concat(Object.values(m.porTag)));
+
+  // v4.15: busca metricas Greenn
+  var gm = null;
+  try{ var gr = await fetch('/api/integrations/greenn/metrics'); var gj = await gr.json(); gm = gj.metrics; }catch(e){}
+  var fmtBRL = function(v){ return 'R$ '+Number(v||0).toFixed(2).replace('.',','); };
+
   var html = '<div class="dash">'+
     '<h2>📊 Dashboard</h2>'+
     '<div class="dash-grid">'+
@@ -2028,8 +2034,47 @@ function renderReports(main){
       '<div class="dash-card accent-red"><div class="dc-lbl">Arquivadas</div><div class="dc-val">'+m.arquivadas+'</div><div class="dc-hint">fora do inbox principal</div></div>'+
       '<div class="dash-card"><div class="dc-lbl">Trancadas</div><div class="dc-val">'+m.trancadas+'</div><div class="dc-hint">conversas privadas</div></div>'+
       '<div class="dash-card"><div class="dc-lbl">Fixadas no topo</div><div class="dc-val">'+m.fixadas+'</div><div class="dc-hint">prioridade visual</div></div>'+
-    '</div>'+
-    '<div class="dash-section">'+
+    '</div>';
+
+  // v4.15: Secao Greenn
+  if(gm && gm.totalEventos > 0){
+    var maxVend = Math.max.apply(Math, [1].concat(gm.days7.map(function(x){return x.vendas;})));
+    html += '<div class="dash-section" style="border-color:var(--gold3)">'+
+      '<h3 style="color:var(--gold)">🌱 Vendas Greenn</h3>'+
+      '<div class="dash-grid" style="margin-bottom:14px">'+
+        '<div class="dash-card"><div class="dc-lbl">Receita hoje</div><div class="dc-val accent-green" style="color:#10b981">'+fmtBRL(gm.hoje.revenue)+'</div><div class="dc-hint">'+gm.hoje.paid+' aprovadas</div></div>'+
+        '<div class="dash-card"><div class="dc-lbl">Receita 7 dias</div><div class="dc-val" style="color:#10b981">'+fmtBRL(gm.ultimos7.revenue)+'</div><div class="dc-hint">'+gm.ultimos7.paid+' aprovadas · ticket medio '+fmtBRL(gm.ultimos7.avgTicket)+'</div></div>'+
+        '<div class="dash-card"><div class="dc-lbl">Receita 30 dias</div><div class="dc-val" style="color:#10b981">'+fmtBRL(gm.ultimos30.revenue)+'</div><div class="dc-hint">'+gm.ultimos30.paid+' aprovadas</div></div>'+
+        '<div class="dash-card"><div class="dc-lbl">Conversao 30d</div><div class="dc-val">'+(gm.ultimos30.conversionPct||0)+'<span style="font-size:14px;color:var(--text2)"> %</span></div><div class="dc-hint">aprovadas / total eventos</div></div>'+
+        '<div class="dash-card accent-red"><div class="dc-lbl">Carrinho abandonado</div><div class="dc-val">'+gm.ultimos7.abandoned+'</div><div class="dc-hint">ultimos 7 dias</div></div>'+
+        '<div class="dash-card"><div class="dc-lbl">Recusadas</div><div class="dc-val" style="color:#f59e0b">'+gm.ultimos7.refused+'</div><div class="dc-hint">ultimos 7 dias</div></div>'+
+      '</div>'+
+      '<h3 style="margin-bottom:10px">Vendas nos ultimos 7 dias</h3>'+
+      '<div style="display:flex;gap:4px;align-items:flex-end;height:80px;margin-bottom:12px">'+
+        gm.days7.map(function(d){
+          var pct = maxVend>0 ? Math.round(d.vendas/maxVend*100) : 0;
+          var label = d.date.slice(5);
+          return '<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px">'+
+            '<div style="font-size:10px;color:var(--gold);font-weight:700">'+(d.vendas||'')+'</div>'+
+            '<div style="width:100%;background:var(--panel2);border-radius:4px;height:'+Math.max(pct,4)+'%;min-height:4px;transition:height .4s"></div>'+
+            '<div style="font-size:9px;color:var(--text2);text-align:center">'+label+'</div>'+
+          '</div>';
+        }).join('')+
+      '</div>';
+    if(gm.topProducts && gm.topProducts.length){
+      html += '<h3 style="margin-bottom:10px">Top produtos (por receita 30d)</h3>';
+      var topMax = Math.max.apply(Math, [1].concat(gm.topProducts.map(function(p){return p.revenue;})));
+      gm.topProducts.forEach(function(p){
+        var pct = topMax>0 ? Math.round(p.revenue/topMax*100) : 0;
+        html += '<div class="dash-bar"><div class="dash-bar-lbl" style="width:180px">'+esc(p.name)+'</div>'+
+                '<div class="dash-bar-fill"><div style="width:'+pct+'%;background:var(--gold)"></div></div>'+
+                '<div class="dash-bar-num" style="min-width:90px">'+fmtBRL(p.revenue)+' ('+p.count+')</div></div>';
+      });
+    }
+    html += '</div>';
+  }
+
+  html += '<div class="dash-section">'+
       '<h3>Por departamento</h3>'+
       Object.keys(m.porDept).sort().map(function(k){return bar(k, m.porDept[k], deptMax, 'var(--gold)');}).join('') ||
       '<div style="color:var(--text2);font-size:12px">Sem dados</div>'+

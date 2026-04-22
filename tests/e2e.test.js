@@ -351,6 +351,35 @@ async function run(){
     expect(html.includes("function greennRuleToggle"), "Rules: toggle regra");
     expect(html.includes("function greennRuleSaveFields"), "Rules: salvar regras");
     expect(html.includes("Regras de auto-follow-up"), "Rules: card na pagina");
+    // v4.15 Dashboard Greenn
+    expect(html.includes("🌱 Vendas Greenn"), "Dashboard: secao Greenn");
+    expect(html.includes("Receita hoje"), "Dashboard Greenn: card receita hoje");
+    expect(html.includes("Top produtos"), "Dashboard Greenn: top produtos");
+    expect(html.includes("/api/integrations/greenn/metrics"), "Dashboard: fetch metrics");
+  }
+
+  console.log("\n== Teste: Greenn metrics endpoint (v4.15) ==");
+  {
+    // dispara 3 webhooks pra ter dados
+    const base = `http://127.0.0.1:${CRM_PORT}`;
+    await fetch(`${base}/api/webhook/greenn`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ data: { customer: { name: 'A', phone: '5511111111111' }, product: { name: 'Curso 1' }, transaction: { status: 'paid', total: 500 } } }) });
+    await fetch(`${base}/api/webhook/greenn`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ data: { customer: { name: 'B', phone: '5511222222222' }, product: { name: 'Curso 2' }, transaction: { status: 'paid', total: 1000 } } }) });
+    await fetch(`${base}/api/webhook/greenn`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ data: { customer: { name: 'C', phone: '5511333333333' }, product: { name: 'Curso 1' }, transaction: { status: 'abandoned' } } }) });
+    const r = await fetch(`${base}/api/integrations/greenn/metrics`);
+    const j = await r.json();
+    expect(j.ok === true && j.metrics, "metrics endpoint OK");
+    const m = j.metrics;
+    expect(m.hoje.paid >= 2, "conta aprovadas de hoje");
+    expect(m.hoje.revenue >= 1500, "soma receita hoje");
+    expect(m.hoje.abandoned >= 1, "conta abandonadas");
+    expect(m.hoje.conversionPct > 0, "calcula conversao");
+    expect(m.hoje.avgTicket > 0, "calcula ticket medio");
+    expect(Array.isArray(m.topProducts), "top products array");
+    expect(m.topProducts.some(p => p.name === 'Curso 1'), "Curso 1 no top");
+    expect(Array.isArray(m.days7) && m.days7.length === 7, "serie 7 dias");
   }
 
   console.log("\n== Teste: Webhook Greenn (v4.12) ==");
