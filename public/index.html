@@ -655,7 +655,11 @@ var QRS_DEFAULTS=[
   {n:'Eduzz-BoasVindas', t:'{nome}, compra aprovada na Eduzz! 🎉\n\nSeu acesso ao {produto} ({valor}) chega em instantes no seu email. Qualquer duvida estou aqui.\n\nBora comecar? ✨'},
   {n:'Eduzz-Abandono',   t:'Oi {nome}! Vi que voce comecou a compra do {produto} na Eduzz e parou no meio. Posso te ajudar com o pagamento? Aceito Pix, cartao ou boleto.'},
   {n:'Eduzz-Boleto-Vencido', t:'{nome}, seu boleto do {produto} venceu. Quer que eu gere um novo agora? Tambem tenho Pix (cai em segundos).'},
-  {n:'Eduzz-Recusada',   t:'{nome}, o pagamento do {produto} nao foi aprovado ({statusLabel}). Podemos tentar outra forma? Tenho Pix, outro cartao, parcelamento ou boleto.'}
+  {n:'Eduzz-Recusada',   t:'{nome}, o pagamento do {produto} nao foi aprovado ({statusLabel}). Podemos tentar outra forma? Tenho Pix, outro cartao, parcelamento ou boleto.'},
+  {n:'Hotmart-BoasVindas', t:'{nome}, matricula aprovada! 🔥\n\nSeu acesso ao {produto} ({valor}) ja esta liberado na Hotmart. Pode entrar pelo app ou pelo site.\n\nQualquer duvida, me chama por aqui. Bora? ✨'},
+  {n:'Hotmart-Boleto',     t:'Oi {nome}! Seu boleto do {produto} ({valor}) foi gerado. Quando pagar, o acesso libera automatico. Se preferir Pix (cai na hora), me chama.'},
+  {n:'Hotmart-Abandono',   t:'{nome}, vi que voce comecou o checkout do {produto} na Hotmart e nao finalizou. Ficou alguma duvida? Posso te ajudar com o pagamento ou esclarecer qualquer coisa sobre o curso.'},
+  {n:'Hotmart-Recusada',   t:'{nome}, o pagamento do {produto} nao foi aprovado ({statusLabel}). Vamos tentar outro metodo? Pix cai na hora, ou posso gerar novo boleto. Me chama!'}
 ];
 function loadTemplates(){
   try{
@@ -1382,6 +1386,73 @@ function eduzzFilterChange(field, value){
   window._eduzzFilterTimer = setTimeout(function(){ renderIntegracoesPage(document.getElementById('main')); }, field==='status'?0:300);
 }
 function eduzzFiltersClear(){ _eduzzFilters = { status:'', product:'', search:'' }; renderIntegracoesPage(document.getElementById('main')); }
+// === HOTMART (v4.19) ===
+function handleHotmartEvent(ev){
+  try{
+    if(!ev) return;
+    var conv = greennMatchOrCreateConv(ev);
+    if(!conv) return;
+    conv.dept = 'Hotmart';
+    var tag = greennAutoTag(ev.status);
+    if(tag) conv.tag = tag;
+    var emoji = ({paid:'✅',refused:'❌',refunded:'↩️',chargedback:'⚠️',abandoned:'🛒',expired:'⏰',pending:'⏳',cancelled:'🚫'})[String(ev.status||'').toLowerCase()] || 'ℹ️';
+    var valor = ev.total ? ' R$ '+Number(ev.total).toFixed(2).replace('.',',') : '';
+    var extra = ev.installments ? ' ('+ev.installments+'x)' : '';
+    var noteText = emoji+' Hotmart: '+(ev.statusLabel||ev.status)+(ev.productName?' — '+ev.productName:'')+valor+extra;
+    conv.msgs.push({r:'note', t:noteText, ts:new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})});
+    if(!Array.isArray(conv.greennHistory)) conv.greennHistory = [];
+    conv.greennHistory.push({ status: ev.status, statusLabel: ev.statusLabel, productName: ev.productName, total: ev.total, currency: ev.currency, transactionId: ev.transactionId, at: ev.receivedAt || Date.now(), source: 'hotmart', event: ev.event });
+    if(conv.greennHistory.length > 20) conv.greennHistory = conv.greennHistory.slice(-20);
+    conv.greennLast = conv.greennHistory[conv.greennHistory.length-1];
+    if(typeof renderSB==='function') renderSB();
+    if(window.cur === conv.id){
+      if(typeof renderMsgs==='function') renderMsgs(conv.id);
+      if(typeof renderRP==='function') renderRP(conv.id);
+    }
+    if(typeof toast==='function') toast(emoji+' '+ev.name+': '+ev.statusLabel+(valor?valor:''));
+    if(typeof playBeep==='function' && ev.status==='paid') playBeep();
+    if(typeof showNotif==='function') showNotif('Hotmart — '+ev.statusLabel, ev.name+(valor?valor:''));
+  }catch(e){ console.warn('[hotmart] handleEvent err', e); }
+}
+async function fetchHotmartStatus(){ try{ var r=await fetch('/api/integrations/hotmart/status'); return await r.json(); }catch(e){ return null; } }
+async function fetchHotmartEvents(limit, q){
+  try{
+    var qs='limit='+(limit||50);
+    if(q){ if(q.status)qs+='&status='+encodeURIComponent(q.status); if(q.product)qs+='&product='+encodeURIComponent(q.product); if(q.search)qs+='&search='+encodeURIComponent(q.search); }
+    var r=await fetch('/api/integrations/hotmart/events?'+qs);
+    var d=await r.json();
+    return { items: d.items||[], total: d.total||0, count: d.count||0 };
+  }catch(e){ return { items:[], total:0, count:0 }; }
+}
+async function fetchHotmartRules(){ try{ var r=await fetch('/api/integrations/hotmart/rules'); var d=await r.json(); return d.rules||[]; }catch(e){ return []; } }
+async function hotmartRulesPut(rules){ var r=await fetch('/api/integrations/hotmart/rules',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(rules)}); return r.json(); }
+var _hotmartRulesCache = [];
+function hotmartRuleToggle(status){
+  _hotmartRulesCache.forEach(function(r){ if(r.status===status) r.enabled=!r.enabled; });
+  hotmartRulesPut(_hotmartRulesCache).then(function(d){ if(d.ok){ if(typeof toast==='function') toast('Regra Hotmart salva'); renderIntegracoesPage(document.getElementById('main')); } });
+}
+function hotmartRuleToggleBody(status){ var el=document.getElementById('hrb-'+status); if(el) el.classList.toggle('open'); }
+function hotmartRuleSaveFields(status){
+  var delay=Number(document.getElementById('hrdel-'+status).value)||0;
+  var msg=document.getElementById('hrmsg-'+status).value;
+  _hotmartRulesCache.forEach(function(r){ if(r.status===status){ r.delayMin=delay; r.message=msg; } });
+  hotmartRulesPut(_hotmartRulesCache).then(function(d){ if(d.ok){ if(typeof toast==='function') toast('Regra atualizada'); } });
+}
+var _hotmartFilters = { status:'', product:'', search:'' };
+function hotmartFilterChange(field, value){
+  _hotmartFilters[field]=value;
+  clearTimeout(window._hotmartFilterTimer);
+  window._hotmartFilterTimer = setTimeout(function(){ renderIntegracoesPage(document.getElementById('main')); }, field==='status'?0:300);
+}
+function hotmartFiltersClear(){ _hotmartFilters = { status:'', product:'', search:'' }; renderIntegracoesPage(document.getElementById('main')); }
+function hotmartCsvUrl(){
+  var qs=[];
+  if(_hotmartFilters.status) qs.push('status='+encodeURIComponent(_hotmartFilters.status));
+  if(_hotmartFilters.product) qs.push('product='+encodeURIComponent(_hotmartFilters.product));
+  if(_hotmartFilters.search) qs.push('search='+encodeURIComponent(_hotmartFilters.search));
+  return '/api/integrations/hotmart/events.csv'+(qs.length?'?'+qs.join('&'):'');
+}
+
 function eduzzCsvUrl(){
   var qs=[];
   if(_eduzzFilters.status) qs.push('status='+encodeURIComponent(_eduzzFilters.status));
@@ -1466,6 +1537,7 @@ async function renderIntegracoesPage(main){
   var platform = intPlatformCurrent();
   var greennSt = await fetchGreennStatus();
   var eduzzSt = await fetchEduzzStatus();
+  var hotmartSt = await fetchHotmartStatus();
 
   var header = '<div class="int-page">'+
     '<h2>🔌 Integrações</h2>'+
@@ -1477,7 +1549,85 @@ async function renderIntegracoesPage(main){
       '<button class="plt-tab '+(platform==='eduzz'?'active':'')+'" onclick="intPlatformSet(\'eduzz\')">'+
         '📘 Eduzz <span class="plt-count">'+((eduzzSt&&eduzzSt.eventsCount)||0)+'</span>'+
       '</button>'+
+      '<button class="plt-tab '+(platform==='hotmart'?'active':'')+'" onclick="intPlatformSet(\'hotmart\')">'+
+        '🔥 Hotmart <span class="plt-count">'+((hotmartSt&&hotmartSt.eventsCount)||0)+'</span>'+
+      '</button>'+
     '</div>';
+
+  if(platform === 'hotmart'){
+    var _hg = await fetchHotmartEvents(100, _hotmartFilters);
+    var events = _hg.items; var totalAll = _hg.total;
+    _hotmartRulesCache = await fetchHotmartRules();
+    var rulesHtml = _hotmartRulesCache.map(function(r){
+      var lblMap = {paid:'Aprovada',pending:'Pendente/Boleto',refused:'Recusada',abandoned:'Abandonou carrinho',refunded:'Reembolsada',chargedback:'Chargeback',expired:'Expirado',cancelled:'Cancelada'};
+      var lbl = lblMap[r.status] || r.status;
+      return '<div class="rule-row">'+
+        '<div class="rule-head" onclick="hotmartRuleToggleBody(\''+esc(r.status)+'\')">'+
+          '<span class="rule-stt '+esc(r.status)+'">'+esc(lbl)+'</span>'+
+          '<div class="rule-info"><div class="rn">Quando status = '+esc(r.status)+'</div><div class="rd">Agenda em '+(r.delayMin||0)+' min &middot; '+(r.enabled?'ativo':'desativado')+'</div></div>'+
+          '<div class="rule-toggle '+(r.enabled?'on':'')+'" onclick="event.stopPropagation();hotmartRuleToggle(\''+esc(r.status)+'\')"></div>'+
+        '</div>'+
+        '<div class="rule-body" id="hrb-'+esc(r.status)+'">'+
+          '<label style="font-size:11px;color:var(--text2)">Atraso (minutos):</label> '+
+          '<input type="number" id="hrdel-'+esc(r.status)+'" value="'+Number(r.delayMin||0)+'" min="0" max="1440">'+
+          '<textarea id="hrmsg-'+esc(r.status)+'">'+esc(r.message||'')+'</textarea>'+
+          '<div class="rule-actions"><button class="primary" onclick="hotmartRuleSaveFields(\''+esc(r.status)+'\')">Salvar</button></div>'+
+        '</div>'+
+      '</div>';
+    }).join('');
+
+    var authStatus = (hotmartSt && hotmartSt.hottokConfigured)
+      ? '<span style="color:#10b981">✓ HOTTOK configurado (env HOTMART_HOTTOK) - validado via payload.hottok</span>'
+      : (hotmartSt && hotmartSt.hmacConfigured)
+        ? '<span style="color:#10b981">✓ HMAC configurado (env HOTMART_HMAC_SECRET) - header x-hotmart-hmac-sha256</span>'
+        : '<span style="color:#f59e0b">⚠ Sem autenticacao (modo aberto). Configure HOTMART_HOTTOK (recomendado) ou HOTMART_HMAC_SECRET.</span>';
+
+    header += '<div class="int-card" style="border-left:4px solid #ef5f1e">'+
+      '<h3>🔥 Hotmart <span class="int-badge">Ativa</span></h3>'+
+      '<div class="int-sub" style="margin-bottom:14px">Maior plataforma de cursos digitais. Configure em <strong>app-postback.hotmart.com</strong> ou Tools &gt; Webhook no painel do seu produto. Suporta hottok (legado) e HMAC-SHA256 (novo).</div>'+
+      '<div class="int-row"><strong>Webhook URL:</strong><div class="int-url" id="hotmart-url">'+esc((hotmartSt&&hotmartSt.webhookUrl)||location.origin+'/api/webhook/hotmart')+'</div><button class="int-cp" onclick="navigator.clipboard.writeText(document.getElementById(\'hotmart-url\').textContent).then(function(){toast(\'URL copiada\')})">Copiar</button></div>'+
+      '<div class="int-row"><strong>Autenticacao:</strong>&nbsp;'+authStatus+'</div>'+
+      '<div class="int-row"><strong>Eventos recebidos:</strong>&nbsp;'+((hotmartSt&&hotmartSt.eventsCount)||0)+'</div>'+
+      '<div class="int-row" style="margin-top:10px;padding:10px;background:var(--panel2);border-radius:6px;font-size:11px;color:var(--text2)"><strong>Eventos Hotmart suportados:</strong> PURCHASE_APPROVED, PURCHASE_COMPLETE, PURCHASE_DELAYED, PURCHASE_REFUNDED, PURCHASE_CHARGEBACK, PURCHASE_CANCELED, PURCHASE_EXPIRED, PURCHASE_OUT_OF_SHOPPING_CART, PURCHASE_BILLET_PRINTED, SUBSCRIPTION_CANCELLATION, SWITCH_PLAN, UPDATE_SUBSCRIPTION_CHARGE_DATE</div>'+
+    '</div>'+
+    '<div class="int-card">'+
+      '<h3>Regras de auto-follow-up (Hotmart) <span class="int-badge">backend</span></h3>'+
+      '<div class="int-sub" style="margin-bottom:12px">Independente das regras Greenn/Eduzz. Use {nome}, {produto}, {valor}, {statusLabel}.</div>'+
+      '<div class="rules-list">'+rulesHtml+'</div>'+
+    '</div>'+
+    '<div class="int-events">'+
+      '<h3>Eventos '+(totalAll?'('+events.length+' / '+totalAll+' total)':'('+events.length+')')+'</h3>'+
+      '<div class="int-filters">'+
+        '<select onchange="hotmartFilterChange(\'status\', this.value)">'+
+          '<option value="">Todos status</option>'+
+          ['paid','refused','abandoned','refunded','chargedback','expired','cancelled','pending'].map(function(s){
+            return '<option value="'+s+'"'+(_hotmartFilters.status===s?' selected':'')+'>'+esc(s)+'</option>';
+          }).join('')+
+        '</select>'+
+        '<input type="text" placeholder="Filtrar produto..." value="'+esc(_hotmartFilters.product)+'" oninput="hotmartFilterChange(\'product\', this.value)">'+
+        '<input type="text" placeholder="Buscar..." value="'+esc(_hotmartFilters.search)+'" oninput="hotmartFilterChange(\'search\', this.value)">'+
+        (_hotmartFilters.status||_hotmartFilters.product||_hotmartFilters.search ? '<button onclick="hotmartFiltersClear()" style="background:var(--panel2);color:var(--text);border:none;border-radius:6px;padding:7px 12px;cursor:pointer;font-size:12px">Limpar</button>' : '')+
+        '<a class="int-csv" href="'+hotmartCsvUrl()+'" download>📥 Exportar CSV</a>'+
+      '</div>';
+    if(events.length===0){
+      header += '<div style="color:var(--text2);text-align:center;padding:24px;font-style:italic">Nenhum evento ainda.</div>';
+    } else {
+      events.forEach(function(ev){
+        var when = new Date(ev.receivedAt).toLocaleString('pt-BR');
+        var valor = ev.total ? ' &middot; <span class="int-evt-val">R$ '+Number(ev.total).toFixed(2)+'</span>' : '';
+        var pay = ev.paymentType ? ' &middot; '+esc(ev.paymentType) : '';
+        var inst = ev.installments ? ' '+ev.installments+'x' : '';
+        header += '<div class="int-evt">'+
+          '<span class="int-evt-status '+esc(ev.status||'unknown')+'">'+esc(ev.statusLabel||ev.status||'?')+'</span>'+
+          '<div class="int-evt-info"><div class="int-evt-name">'+esc(ev.name||ev.email||ev.phone||'(sem nome)')+(ev.productName?' &middot; '+esc(ev.productName):'')+'</div>'+
+          '<div class="int-evt-meta">'+when+(ev.phone?' &middot; '+esc(ev.phone):'')+valor+pay+inst+'</div></div>'+
+        '</div>';
+      });
+    }
+    header += '</div></div>';
+    main.style.cssText = ''; main.innerHTML = header;
+    return;
+  }
 
   if(platform === 'eduzz'){
     var _eg = await fetchEduzzEvents(100, _eduzzFilters);
@@ -2295,6 +2445,36 @@ async function renderReports(main){
     html += '</div>';
   }
 
+  // v4.19: Secao Hotmart no dashboard (laranja)
+  try{
+    var hgr = await fetch('/api/integrations/hotmart/metrics'); var hgj = await hgr.json();
+    var hm = hgj.metrics;
+    if(hm && hm.totalEventos > 0){
+      var maxV3 = Math.max.apply(Math, [1].concat(hm.days7.map(function(x){return x.vendas;})));
+      html += '<div class="dash-section" style="border-color:#ef5f1e;border-width:1px">'+
+        '<h3 style="color:#ef5f1e">🔥 Vendas Hotmart</h3>'+
+        '<div class="dash-grid" style="margin-bottom:14px">'+
+          '<div class="dash-card"><div class="dc-lbl">Receita hoje</div><div class="dc-val" style="color:#10b981">'+fmtBRL(hm.hoje.revenue)+'</div><div class="dc-hint">'+hm.hoje.paid+' aprovadas</div></div>'+
+          '<div class="dash-card"><div class="dc-lbl">Receita 7 dias</div><div class="dc-val" style="color:#10b981">'+fmtBRL(hm.ultimos7.revenue)+'</div><div class="dc-hint">'+hm.ultimos7.paid+' aprovadas · ticket '+fmtBRL(hm.ultimos7.avgTicket)+'</div></div>'+
+          '<div class="dash-card"><div class="dc-lbl">Receita 30 dias</div><div class="dc-val" style="color:#10b981">'+fmtBRL(hm.ultimos30.revenue)+'</div><div class="dc-hint">'+hm.ultimos30.paid+' aprovadas</div></div>'+
+          '<div class="dash-card"><div class="dc-lbl">Conversao 30d</div><div class="dc-val">'+(hm.ultimos30.conversionPct||0)+'<span style="font-size:14px;color:var(--text2)"> %</span></div><div class="dc-hint">aprovadas / total</div></div>'+
+          '<div class="dash-card accent-red"><div class="dc-lbl">Abandonadas</div><div class="dc-val">'+hm.ultimos7.abandoned+'</div><div class="dc-hint">ultimos 7 dias</div></div>'+
+          '<div class="dash-card"><div class="dc-lbl">Boletos vencidos</div><div class="dc-val" style="color:#f59e0b">'+hm.ultimos7.expired+'</div><div class="dc-hint">7 dias</div></div>'+
+        '</div>';
+      if(hm.topProducts && hm.topProducts.length){
+        html += '<h3 style="margin-bottom:10px">Top produtos Hotmart (30d)</h3>';
+        var topMax3 = Math.max.apply(Math, [1].concat(hm.topProducts.map(function(p){return p.revenue;})));
+        hm.topProducts.forEach(function(p){
+          var pct3 = topMax3>0 ? Math.round(p.revenue/topMax3*100) : 0;
+          html += '<div class="dash-bar"><div class="dash-bar-lbl" style="width:180px">'+esc(p.name)+'</div>'+
+                  '<div class="dash-bar-fill"><div style="width:'+pct3+'%;background:#ef5f1e"></div></div>'+
+                  '<div class="dash-bar-num" style="min-width:90px">'+fmtBRL(p.revenue)+' ('+p.count+')</div></div>';
+        });
+      }
+      html += '</div>';
+    }
+  }catch(e){}
+
   // v4.18: Secao Eduzz no dashboard
   try{
     var egr = await fetch('/api/integrations/eduzz/metrics'); var egj = await egr.json();
@@ -2545,6 +2725,7 @@ setTimeout(checkStatus,2000);
         if(evt.type === "whatsapp_disconnected"){ checkConnection(); toast("WhatsApp desconectou"); return; }
         if(evt.type === "greenn_event"){ if(typeof handleGreennEvent==='function') handleGreennEvent(evt.data); return; }
         if(evt.type === "eduzz_event"){ if(typeof handleEduzzEvent==='function') handleEduzzEvent(evt.data); return; }
+        if(evt.type === "hotmart_event"){ if(typeof handleHotmartEvent==='function') handleHotmartEvent(evt.data); return; }
         if(evt.type === "message_in"){ handleRealRow(evt.data, false); return; }
         if(evt.type === "message_out"){ handleRealRow(evt.data, true); return; }
         // fallback legado: backend antigo emitia sempre "new_message" com payload embrulhado

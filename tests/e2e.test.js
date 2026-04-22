@@ -535,6 +535,103 @@ async function run(){
     expect(html.includes("'Eduzz-Boleto-Vencido'"), "Eduzz: template Boleto Vencido");
     expect(html.includes("IMP_PLATFORM_KEY"), "Eduzz: persiste aba ativa");
     expect(html.includes("📘 Vendas Eduzz"), "Dashboard: secao Eduzz");
+    // v4.19 Hotmart frontend
+    expect(html.includes("function handleHotmartEvent"), "Hotmart: handler SSE");
+    expect(html.includes("hotmart_event"), "Hotmart: escuta hotmart_event");
+    expect(html.includes("🔥 Hotmart"), "Hotmart: aba na UI");
+    expect(html.includes("fetchHotmartRules"), "Hotmart: fetch rules");
+    expect(html.includes("fetchHotmartEvents"), "Hotmart: fetch events");
+    expect(html.includes("'Hotmart-BoasVindas'"), "Hotmart: template BoasVindas");
+    expect(html.includes("'Hotmart-Boleto'"), "Hotmart: template Boleto");
+    expect(html.includes("'Hotmart-Abandono'"), "Hotmart: template Abandono");
+    expect(html.includes("'Hotmart-Recusada'"), "Hotmart: template Recusada");
+    expect(html.includes("🔥 Vendas Hotmart"), "Dashboard: secao Hotmart");
+    expect(html.includes("#ef5f1e"), "Hotmart: cor laranja do branding");
+  }
+
+  console.log("\n== Teste: Hotmart webhook v2 (v4.19) ==");
+  {
+    const base = `http://127.0.0.1:${CRM_PORT}`;
+    // Status
+    const r0 = await fetch(`${base}/api/integrations/hotmart/status`);
+    const j0 = await r0.json();
+    expect(j0.ok === true && j0.webhookUrl.endsWith('/api/webhook/hotmart'), "status + URL");
+
+    // Payload v2 completo PURCHASE_APPROVED
+    const payload = {
+      id: 'uuid-xyz-001',
+      event: 'PURCHASE_APPROVED',
+      version: '2.0.0',
+      data: {
+        product: { id: 99001, name: 'Curso Hotmart X', ucode: 'UC-XYZ' },
+        buyer: {
+          name: 'Lucas Hot',
+          email: 'lucas@test.com',
+          document: '000.000.000-00',
+          phone: { country_code: '55', area_code: '11', number: '988776655' }
+        },
+        purchase: {
+          transaction: 'HP123456',
+          status: 'APPROVED',
+          price: { value: 1997, currency_value: 'BRL' },
+          payment: { type: 'CREDIT_CARD', installments_number: 12 },
+          approved_date: Date.now()
+        }
+      }
+    };
+    const r1 = await fetch(`${base}/api/webhook/hotmart`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const j1 = await r1.json();
+    expect(j1.ok === true, "webhook aceitou");
+    expect(j1.normalized.phone === '5511988776655', "phone montado de country_code+area_code+number");
+    expect(j1.normalized.name === 'Lucas Hot', "name extraido de buyer");
+    expect(j1.normalized.status === 'paid', "mapeou PURCHASE_APPROVED -> paid");
+    expect(j1.normalized.event === 'PURCHASE_APPROVED', "event preservado");
+    expect(typeof j1.autoScheduledId === 'string', "auto-schedule criado");
+
+    // Teste com buyer.checkout_phone direto
+    const p2 = { event: 'PURCHASE_APPROVED', data: { buyer: { name: 'Tel Direto', checkout_phone: '+5511999998888' }, product: { name: 'X' }, purchase: { status: 'APPROVED', price: { value: 100 } } } };
+    const r2 = await fetch(`${base}/api/webhook/hotmart`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(p2) });
+    const j2 = await r2.json();
+    expect(j2.normalized.phone === '5511999998888', "phone de checkout_phone");
+
+    // Testa mapeamento de outros eventos
+    for (const [event, expectedStatus] of [
+      ['PURCHASE_REFUNDED', 'refunded'],
+      ['PURCHASE_CHARGEBACK', 'chargedback'],
+      ['PURCHASE_EXPIRED', 'expired'],
+      ['PURCHASE_CANCELED', 'cancelled'],
+      ['PURCHASE_DELAYED', 'pending'],
+      ['PURCHASE_OUT_OF_SHOPPING_CART', 'abandoned'],
+      ['PURCHASE_BILLET_PRINTED', 'pending']
+    ]) {
+      const r = await fetch(`${base}/api/webhook/hotmart`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event, data: { buyer: { name: 'X', checkout_phone: '+5511900000001' }, product: { name: 'Y' }, purchase: { status: 'X' } } })
+      });
+      const j = await r.json();
+      expect(j.normalized.status === expectedStatus, `${event} -> ${expectedStatus}`);
+    }
+
+    // Metrics
+    const rm = await fetch(`${base}/api/integrations/hotmart/metrics`);
+    const jm = await rm.json();
+    expect(jm.ok && jm.metrics.hoje.paid >= 2, "metrics conta paid");
+    expect(jm.metrics.hoje.revenue >= 1997, "metrics soma receita");
+
+    // CSV com paymentType e installments
+    const rc = await fetch(`${base}/api/integrations/hotmart/events.csv`);
+    const csv = await rc.text();
+    expect(rc.status === 200, "CSV 200");
+    expect(csv.includes('CREDIT_CARD') || csv.includes('paymentType'), "CSV tem paymentType");
+
+    // Rules
+    const rr = await fetch(`${base}/api/integrations/hotmart/rules`);
+    const jr = await rr.json();
+    expect(jr.rules.length >= 5, "5+ regras default");
+    expect(jr.rules.some(r => r.status === 'pending'), "regra pending (boleto/pix)");
   }
 
   console.log("\n== Teste: Webhook Greenn (v4.12) ==");

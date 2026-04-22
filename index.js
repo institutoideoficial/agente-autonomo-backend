@@ -480,6 +480,267 @@ app.get("/api/integrations/greenn/status", (req, res) => {
 });
 
 // ============================================================
+// INTEGRACAO HOTMART (v4.19) - webhook v2 + hottok/HMAC + SSE
+// ============================================================
+const HOTMART_FILE = process.env.HOTMART_FILE || path.join(__dirname, "data", "hotmart-events.json");
+const HOTMART_HOTTOK = process.env.HOTMART_HOTTOK || ""; // token do produtor (payload.hottok)
+const HOTMART_HMAC_SECRET = process.env.HOTMART_HMAC_SECRET || ""; // HMAC opcional
+const HOTMART_MAX_EVENTS = 200;
+const HOTMART_RULES_FILE = process.env.HOTMART_RULES_FILE || path.join(__dirname, "data", "hotmart-rules.json");
+
+function hotmartLoad() { try { return JSON.parse(require("fs").readFileSync(HOTMART_FILE, "utf8")); } catch { return []; } }
+function hotmartSave(arr) { try { require("fs").writeFileSync(HOTMART_FILE, JSON.stringify(arr.slice(-HOTMART_MAX_EVENTS), null, 2)); } catch (e) { console.error("[hotmart]", e?.message); } }
+
+// Mapeia event Hotmart v2 -> status interno comum
+function hotmartMapStatus(event) {
+  const e = String(event || "").toUpperCase();
+  if (e === "PURCHASE_APPROVED" || e === "PURCHASE_COMPLETE") return "paid";
+  if (e === "PURCHASE_DELAYED" || e === "PURCHASE_BILLET_PRINTED") return "pending";
+  if (e === "PURCHASE_REFUNDED") return "refunded";
+  if (e === "PURCHASE_CHARGEBACK" || e === "PURCHASE_PROTEST") return "chargedback";
+  if (e === "PURCHASE_CANCELED") return "cancelled";
+  if (e === "PURCHASE_EXPIRED") return "expired";
+  if (e === "PURCHASE_OUT_OF_SHOPPING_CART") return "abandoned";
+  if (e === "SUBSCRIPTION_CANCELLATION") return "cancelled";
+  if (e === "SWITCH_PLAN") return "pending"; // mudou plano, aguardando
+  return "unknown";
+}
+
+function normalizeHotmartPayload(raw) {
+  raw = raw || {};
+  const event = raw.event || raw.event_name || "";
+  const d = raw.data || raw;
+  const buyer = d.buyer || {};
+  const product = d.product || {};
+  const purchase = d.purchase || d.transaction || {};
+  const subscription = d.subscription || {};
+
+  const name = buyer.name || buyer.full_name || "";
+  const email = buyer.email || "";
+  // Telefone: tenta checkout_phone direto OU monta a partir de buyer.phone
+  let phone = String(buyer.checkout_phone || "").replace(/\D/g, "");
+  if (!phone && buyer.phone) {
+    const p = buyer.phone;
+    phone = [p.country_code, p.area_code, p.number].map(x => String(x || "").replace(/\D/g, "")).join("");
+  }
+  if (!phone && buyer.document_phone) phone = String(buyer.document_phone).replace(/\D/g, "");
+
+  const productName = product.name || product.title || "";
+  const productId = product.id || product.ucode || "";
+  const priceVal = Number(purchase.price?.value || purchase.value || 0);
+  const priceCur = purchase.price?.currency_value || purchase.currency || "BRL";
+  const transId = purchase.transaction || purchase.id || "";
+  const paymentType = purchase.payment?.type || "";
+  const installments = purchase.payment?.installments_number || null;
+
+  const status = hotmartMapStatus(event);
+  return {
+    event: event || "unknown",
+    type: "hotmart",
+    status,
+    statusLabel: greennStatusLabel(status),
+    name, email, phone,
+    productName, productId,
+    total: priceVal,
+    currency: priceCur,
+    transactionId: transId,
+    paymentType, installments,
+    hasSubscription: !!subscription.status,
+    subscriptionStatus: subscription.status || null,
+    receivedAt: Date.now(),
+    raw
+  };
+}
+
+function hotmartVerifyAuth(req) {
+  // 1. Se HOTMART_HOTTOK setado, verifica no body.hottok OU query ?hottok=
+  if (HOTMART_HOTTOK) {
+    const sent = (req.body && req.body.hottok) || req.query.hottok || req.headers["x-hotmart-hottok"];
+    if (sent && sent === HOTMART_HOTTOK) return true;
+    if (!HOTMART_HMAC_SECRET) return false; // so tem hottok config, e nao bateu
+  }
+  // 2. Se HOTMART_HMAC_SECRET setado, verifica header x-hotmart-hmac-sha256
+  if (HOTMART_HMAC_SECRET) {
+    const sig = req.headers["x-hotmart-hmac-sha256"] || req.headers["x-signature"] || "";
+    if (!sig) return false;
+    const body = JSON.stringify(req.body || {});
+    const expected = crypto.createHmac("sha256", HOTMART_HMAC_SECRET).update(body).digest("hex");
+    try { return crypto.timingSafeEqual(Buffer.from(sig, "utf8"), Buffer.from(expected, "utf8")); } catch { return false; }
+  }
+  // 3. Nem hottok nem HMAC configurados = modo aberto
+  return true;
+}
+
+const HOTMART_RULES_DEFAULTS = [
+  { status: "paid",       delayMin: 1,  enabled: true,  message: "{nome}, matricula aprovada na Hotmart! 🎉\n\nSeu acesso ao {produto} ({valor}) chega em instantes no email. Qualquer duvida me chama aqui.\n\nBora? ✨" },
+  { status: "pending",    delayMin: 30, enabled: true,  message: "Oi {nome}! Vi que voce gerou um boleto/pix pra {produto}. Qualquer coisa com o pagamento, me chama que resolvo aqui. Pix cai na hora ✨" },
+  { status: "abandoned",  delayMin: 15, enabled: true,  message: "{nome}, vi que voce comecou o checkout do {produto} na Hotmart. Ficou alguma duvida? Posso te ajudar a finalizar - Pix, cartao ou boleto." },
+  { status: "expired",    delayMin: 5,  enabled: true,  message: "{nome}, seu boleto do {produto} venceu. Quer que eu gere um novo ou prefere Pix (cai na hora)?" },
+  { status: "refunded",   delayMin: 1,  enabled: false, message: "{nome}, reembolso confirmado ({valor}). Chega na sua conta em ate 7 dias uteis.\n\nSe mudar de ideia, eh so me avisar!" },
+  { status: "chargedback",delayMin: 0,  enabled: false, message: "{nome}, identifiquei chargeback no {produto}. Vamos conversar? Estou aqui se quiser entender algo." }
+];
+function hotmartRulesLoad() {
+  try { return JSON.parse(require("fs").readFileSync(HOTMART_RULES_FILE, "utf8")); }
+  catch { require("fs").writeFileSync(HOTMART_RULES_FILE, JSON.stringify(HOTMART_RULES_DEFAULTS, null, 2)); return HOTMART_RULES_DEFAULTS.slice(); }
+}
+function hotmartRulesSave(arr) { try { require("fs").writeFileSync(HOTMART_RULES_FILE, JSON.stringify(arr || [], null, 2)); } catch (e) { console.error("[hotmart rules]", e?.message); } }
+
+app.post("/api/webhook/hotmart", (req, res) => {
+  try {
+    if (!hotmartVerifyAuth(req)) {
+      return res.status(401).json({ ok: false, error: "autenticacao invalida (hottok/HMAC)" });
+    }
+    const norm = normalizeHotmartPayload(req.body);
+    const arr = hotmartLoad();
+    arr.push(norm);
+    hotmartSave(arr);
+
+    let autoScheduledId = null;
+    try {
+      if (norm.phone) {
+        const rules = hotmartRulesLoad();
+        const rule = rules.find(r => r.enabled && r.status === norm.status);
+        if (rule && rule.message) {
+          const expanded = expandGreennTemplate(rule.message, norm);
+          const sendAt = Date.now() + (Number(rule.delayMin) || 0) * 60 * 1000;
+          const schedArr = schedLoad();
+          const item = {
+            id: schedNewId(),
+            phone: norm.phone,
+            message: expanded,
+            note: `[auto Hotmart: ${norm.statusLabel}]`,
+            sendAt,
+            status: "pending",
+            createdAt: Date.now(),
+            sentAt: null,
+            error: null,
+            source: "hotmart-auto",
+            sourceStatus: norm.status,
+            sourceProduct: norm.productName,
+            sourceTransaction: norm.transactionId
+          };
+          schedArr.push(item);
+          schedSave(schedArr);
+          autoScheduledId = item.id;
+          console.log(`[hotmart-auto] agendou ${item.id} (${norm.status})`);
+        }
+      }
+    } catch (e) { console.error("[hotmart-auto]", e?.message); }
+
+    broadcastSSE({
+      type: "hotmart_event",
+      data: {
+        event: norm.event, status: norm.status, statusLabel: norm.statusLabel,
+        name: norm.name, phone: norm.phone, email: norm.email,
+        productName: norm.productName, total: norm.total, currency: norm.currency,
+        transactionId: norm.transactionId, paymentType: norm.paymentType,
+        installments: norm.installments, receivedAt: norm.receivedAt, autoScheduledId
+      }
+    });
+    res.json({ ok: true, normalized: { phone: norm.phone, name: norm.name, status: norm.status, event: norm.event }, autoScheduledId });
+  } catch (e) {
+    console.error("[hotmart webhook]", e?.message);
+    res.status(500).json({ ok: false, error: e?.message });
+  }
+});
+
+function hotmartMetrics() {
+  const all = hotmartLoad();
+  const now = Date.now();
+  const day = 24 * 60 * 60 * 1000;
+  const startOfDay = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x.getTime(); };
+  const today = startOfDay(now), week = now - 7 * day, month = now - 30 * day;
+  const bucket = (filterFn) => {
+    const arr = all.filter(filterFn);
+    const paid = arr.filter(x => x.status === "paid");
+    const abandoned = arr.filter(x => x.status === "abandoned");
+    const refused = arr.filter(x => x.status === "refused");
+    const expired = arr.filter(x => x.status === "expired");
+    const refunded = arr.filter(x => x.status === "refunded" || x.status === "chargedback");
+    const revenue = paid.reduce((s, x) => s + (Number(x.total) || 0), 0);
+    return {
+      total: arr.length, paid: paid.length, abandoned: abandoned.length,
+      refused: refused.length, expired: expired.length, refunded: refunded.length,
+      revenue: Math.round(revenue * 100) / 100,
+      conversionPct: arr.length ? Math.round((paid.length / arr.length) * 1000) / 10 : 0,
+      avgTicket: paid.length ? Math.round((revenue / paid.length) * 100) / 100 : 0
+    };
+  };
+  const paidAll = all.filter(x => x.status === "paid" && x.productName);
+  const byProduct = {};
+  paidAll.forEach(x => {
+    if (!byProduct[x.productName]) byProduct[x.productName] = { count: 0, revenue: 0 };
+    byProduct[x.productName].count++;
+    byProduct[x.productName].revenue += Number(x.total) || 0;
+  });
+  const topProducts = Object.keys(byProduct)
+    .map(name => ({ name, count: byProduct[name].count, revenue: Math.round(byProduct[name].revenue * 100) / 100 }))
+    .sort((a, b) => b.revenue - a.revenue).slice(0, 5);
+  const days7 = [];
+  for (let i = 6; i >= 0; i--) {
+    const dStart = startOfDay(now - i * day), dEnd = dStart + day;
+    const dayPaid = all.filter(x => x.receivedAt >= dStart && x.receivedAt < dEnd && x.status === "paid");
+    days7.push({ date: new Date(dStart).toISOString().slice(0, 10), vendas: dayPaid.length, receita: Math.round(dayPaid.reduce((s, x) => s + (Number(x.total) || 0), 0) * 100) / 100 });
+  }
+  return { totalEventos: all.length, hoje: bucket(x => x.receivedAt >= today), ultimos7: bucket(x => x.receivedAt >= week), ultimos30: bucket(x => x.receivedAt >= month), topProducts, days7 };
+}
+
+function hotmartFilterEvents(events, q) {
+  q = q || {};
+  const search = String(q.search || '').toLowerCase().trim();
+  const status = String(q.status || '').toLowerCase().trim();
+  const product = String(q.product || '').toLowerCase().trim();
+  return events.filter(ev => {
+    if (status && ev.status !== status) return false;
+    if (product && !String(ev.productName || '').toLowerCase().includes(product)) return false;
+    if (search) {
+      const hay = [ev.name, ev.phone, ev.email, ev.productName, ev.statusLabel, ev.transactionId, ev.status, ev.event].join(' ').toLowerCase();
+      if (!hay.includes(search)) return false;
+    }
+    return true;
+  });
+}
+
+app.get("/api/integrations/hotmart/events", (req, res) => {
+  const arr = hotmartLoad();
+  const filtered = hotmartFilterEvents(arr, req.query);
+  const limit = Math.min(Number(req.query.limit) || 50, 500);
+  res.json({ ok: true, total: arr.length, count: filtered.length, items: filtered.slice(-limit).reverse() });
+});
+app.get("/api/integrations/hotmart/events.csv", (req, res) => {
+  const arr = hotmartLoad();
+  const filtered = hotmartFilterEvents(arr, req.query).slice().reverse();
+  const esc = v => { if (v === null || v === undefined) return ''; const s = String(v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  const cols = ['receivedAt', 'event', 'status', 'statusLabel', 'name', 'phone', 'email', 'productName', 'total', 'currency', 'transactionId', 'paymentType', 'installments'];
+  const lines = [cols.join(',')];
+  filtered.forEach(ev => {
+    const iso = ev.receivedAt ? new Date(ev.receivedAt).toISOString() : '';
+    lines.push([iso, esc(ev.event), esc(ev.status), esc(ev.statusLabel), esc(ev.name), esc(ev.phone), esc(ev.email), esc(ev.productName), esc(ev.total), esc(ev.currency), esc(ev.transactionId), esc(ev.paymentType), esc(ev.installments)].join(','));
+  });
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="hotmart-events-${new Date().toISOString().slice(0, 10)}.csv"`);
+  res.send('\uFEFF' + lines.join('\n'));
+});
+app.get("/api/integrations/hotmart/status", (req, res) => {
+  res.json({
+    ok: true, enabled: true,
+    hottokConfigured: !!HOTMART_HOTTOK,
+    hmacConfigured: !!HOTMART_HMAC_SECRET,
+    webhookUrl: `${req.protocol}://${req.get("host")}/api/webhook/hotmart`,
+    eventsCount: hotmartLoad().length, storageFile: HOTMART_FILE
+  });
+});
+app.get("/api/integrations/hotmart/metrics", (req, res) => { res.json({ ok: true, metrics: hotmartMetrics() }); });
+app.get("/api/integrations/hotmart/rules", (req, res) => { res.json({ ok: true, rules: hotmartRulesLoad() }); });
+app.put("/api/integrations/hotmart/rules", (req, res) => {
+  const arr = Array.isArray(req.body) ? req.body : req.body?.rules;
+  if (!Array.isArray(arr)) return res.status(400).json({ ok: false, error: "body deve ser array" });
+  const clean = arr.map(r => ({ status: String(r.status || '').toLowerCase(), delayMin: Math.max(0, Math.min(60 * 24, Number(r.delayMin) || 0)), enabled: !!r.enabled, message: String(r.message || '') })).filter(r => r.status && r.message);
+  hotmartRulesSave(clean);
+  res.json({ ok: true, rules: clean });
+});
+
+// ============================================================
 // INTEGRACAO EDUZZ (v4.18) - webhook v1 (flat) + v3 (HMAC) + SSE
 // ============================================================
 const crypto = require("crypto");
