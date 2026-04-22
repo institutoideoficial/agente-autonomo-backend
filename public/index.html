@@ -42,15 +42,26 @@ body{background:var(--bg);color:var(--text);height:100vh;display:flex;overflow:h
 .srch-w input{background:none;border:none;outline:none;color:var(--text);font-size:13px;width:100%}
 .srch-w input::placeholder{color:var(--text2)}
 
-/* TABS */
+/* TABS (legado, mantido por compat - .sb-tabs nao eh mais renderizado) */
 .sb-tabs{display:flex;background:var(--panel);border-bottom:1px solid var(--border);flex-shrink:0}
 .sb-tab{flex:1;padding:10px;text-align:center;font-size:12px;font-weight:600;color:var(--text2);cursor:pointer;border-bottom:2px solid transparent}
 .sb-tab.active{color:var(--gold);border-bottom-color:var(--gold)}
 
-/* FILTERS */
+/* FILTERS legado */
 .sb-filters{padding:8px 11px;background:var(--sb2);display:flex;gap:5px;flex-shrink:0;flex-wrap:wrap;border-bottom:1px solid var(--border)}
 .fb{padding:3px 10px;border-radius:12px;border:1px solid var(--border);background:none;color:var(--text2);font-size:11px;cursor:pointer}
 .fb.active{background:var(--gold);border-color:var(--gold);color:#111;font-weight:600}
+
+/* PILLS (v4.2 - estilo Waseller customizavel) */
+.sb-pills{display:flex;gap:6px;padding:9px 11px;background:var(--panel);border-bottom:1px solid var(--border);overflow-x:auto;scrollbar-width:none;flex-shrink:0;align-items:center}
+.sb-pills::-webkit-scrollbar{display:none}
+.pill{padding:6px 12px;border-radius:14px;background:var(--panel2);color:var(--text2);font-size:12px;font-weight:600;border:1px solid transparent;cursor:pointer;white-space:nowrap;transition:all .15s;flex-shrink:0;display:inline-flex;align-items:center;gap:6px;user-select:none}
+.pill:hover{background:#333;color:var(--text)}
+.pill.active{background:var(--gold3);color:var(--gold);border-color:var(--gold)}
+.pill .pcount{font-size:10px;background:rgba(0,0,0,.35);padding:1px 7px;border-radius:10px;font-weight:700;min-width:18px;text-align:center}
+.pill.active .pcount{background:var(--gold);color:#111}
+.pill.add{background:transparent;border:1px dashed var(--text2);color:var(--text2);padding:6px 10px;font-size:14px;line-height:1}
+.pill.add:hover{border-color:var(--gold);color:var(--gold);background:transparent}
 
 /* CONV LIST */
 #cl{flex:1;overflow-y:auto}
@@ -212,19 +223,7 @@ body{background:var(--bg);color:var(--text);height:100vh;display:flex;overflow:h
     </div>
     <div id="wst">Desconectado</div>
   </div>
-  <div class="sb-tabs">
-    <div class="sb-tab active" onclick="setTab('all',this)">Todas</div>
-    <div class="sb-tab" onclick="setTab('open',this)">Abertas</div>
-    <div class="sb-tab" onclick="setTab('bot',this)">Bot</div>
-    <div class="sb-tab" onclick="setTab('resolved',this)">Resolvidas</div>
-  </div>
-  <div class="sb-filters">
-    <button class="fb active" onclick="setFilter('all',this)">Todas</button>
-    <button class="fb" onclick="setFilter('venda',this)">Venda</button>
-    <button class="fb" onclick="setFilter('suporte',this)">Suporte</button>
-    <button class="fb" onclick="setFilter('urgente',this)">Urgente</button>
-    <button class="fb" onclick="setFilter('lead',this)">Lead</button>
-  </div>
+  <div class="sb-pills" id="pills"></div>
   <div class="sb-srch">
     <div class="srch-w">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="#8696a0"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
@@ -389,11 +388,89 @@ function showEmpty(){
   document.getElementById('main').innerHTML='<div id="es"><div class="es-logo">SP</div><h3>SPEAKERS CRM</h3><p>Selecione uma conversa ou crie uma nova</p></div>';
 }
 
+// === FILTROS PILL (v4.2 estilo Waseller) ===
+var IMP_PILLS_KEY="imp_pills_v1";
+var pillsBuiltIn=[
+  {id:'all',     label:'Tudo',       match:function(){return true;},                  builtin:true},
+  {id:'open',    label:'Abertas',    match:function(c){return c.st==='open';},        builtin:true},
+  {id:'pending', label:'Pendentes',  match:function(c){return c.st==='pending';},     builtin:true},
+  {id:'resolved',label:'Resolvidas', match:function(c){return c.st==='resolved';},    builtin:true},
+  {id:'lead',    label:'Leads',      match:function(c){return c.tag==='lead';},       builtin:true},
+  {id:'venda',   label:'Vendas',     match:function(c){return c.tag==='venda';},      builtin:true}
+];
+var pillsCustom=[];
+try{ pillsCustom=JSON.parse(localStorage.getItem(IMP_PILLS_KEY)||'[]'); }catch(e){ pillsCustom=[]; }
+var curPill='all';
+
+function pillMatcher(p){
+  if(p.builtin) return p.match;
+  var q=String(p.query||'').toLowerCase();
+  return function(c){
+    if(!q) return true;
+    return (c.nm||'').toLowerCase().indexOf(q)!==-1 ||
+           (c.tag||'').toLowerCase().indexOf(q)!==-1 ||
+           (c.dept||'').toLowerCase().indexOf(q)!==-1 ||
+           (c.nota||'').toLowerCase().indexOf(q)!==-1;
+  };
+}
+function getAllPills(){
+  return pillsBuiltIn.concat(pillsCustom.map(function(p){
+    return {id:p.id, label:p.label, query:p.query, custom:true, match:pillMatcher(p)};
+  }));
+}
+function setPill(id){
+  curPill=id;
+  curTab='all'; curFilter='all'; // limpa filtros legados
+  renderPills();
+  renderSB();
+}
+function renderPills(){
+  var el=document.getElementById('pills'); if(!el) return;
+  el.innerHTML='';
+  var allConvs=window.convs?Object.values(window.convs):[];
+  getAllPills().forEach(function(p){
+    var count=allConvs.filter(p.match).length;
+    var pill=document.createElement('div');
+    pill.className='pill'+(curPill===p.id?' active':'');
+    pill.innerHTML=esc(p.label)+'<span class="pcount">'+count+'</span>';
+    pill.onclick=function(){setPill(p.id);};
+    if(p.custom){
+      pill.title='Click direito para excluir';
+      pill.oncontextmenu=function(ev){
+        ev.preventDefault();
+        if(confirm('Excluir filtro "'+p.label+'"?')){
+          pillsCustom=pillsCustom.filter(function(x){return x.id!==p.id;});
+          localStorage.setItem(IMP_PILLS_KEY,JSON.stringify(pillsCustom));
+          if(curPill===p.id) curPill='all';
+          renderPills();renderSB();
+        }
+      };
+    }
+    el.appendChild(pill);
+  });
+  var add=document.createElement('div');
+  add.className='pill add';
+  add.textContent='+';
+  add.title='Criar filtro custom';
+  add.onclick=function(){
+    var label=prompt('Nome do filtro (ex: Livro Andreia, Em fechamento, 1:1):');
+    if(!label||!label.trim()) return;
+    var query=prompt('Buscar contatos com este termo no nome/tag/depto/nota.\nDeixe vazio pra mostrar tudo:', label.trim());
+    if(query===null) return;
+    var newPill={id:'c_'+Date.now(), label:label.trim(), query:query.trim()};
+    pillsCustom.push(newPill);
+    localStorage.setItem(IMP_PILLS_KEY,JSON.stringify(pillsCustom));
+    setPill(newPill.id);
+  };
+  el.appendChild(add);
+}
+
 function renderSB(){
-  var cl=document.getElementById('cl');cl.innerHTML='';
-  Object.values(convs).filter(function(c){
-    return (curTab==='all'||c.st===curTab)&&(curFilter==='all'||c.tag===curFilter);
-  }).forEach(function(c){
+  var cl=document.getElementById('cl');if(!cl) return;
+  cl.innerHTML='';
+  var allPills=getAllPills();
+  var p=allPills.find(function(x){return x.id===curPill;}) || allPills[0];
+  Object.values(convs).filter(p.match).forEach(function(c){
     var lm=c.msgs[c.msgs.length-1]||{t:'',ts:''};
     var d=document.createElement('div');
     d.className='ci'+(cur===c.id?' active':'');d.id='ci-'+c.id;
@@ -405,9 +482,11 @@ function renderSB(){
     d.onclick=function(){selConv(c.id);};
     cl.appendChild(d);
   });
+  renderPills();
 }
-function setTab(t,el){curTab=t;document.querySelectorAll('.sb-tab').forEach(function(e){e.classList.remove('active');});el.classList.add('active');renderSB();}
-function setFilter(f,el){curFilter=f;document.querySelectorAll('.fb').forEach(function(e){e.classList.remove('active');});el.classList.add('active');renderSB();}
+// shims legados (v4.1 ainda chama setTab/setFilter de outros lugares)
+function setTab(t){ if(t==='all')setPill('all'); else if(t==='open')setPill('open'); else if(t==='resolved')setPill('resolved'); else setPill('all'); }
+function setFilter(f){ if(f==='all')setPill('all'); else if(f==='lead')setPill('lead'); else if(f==='venda')setPill('venda'); else setPill('all'); }
 function buscar(q){
   document.querySelectorAll('.ci').forEach(function(el){
     var n=el.querySelector('.cnm');
