@@ -150,9 +150,119 @@ app.post("/api/webhook/bravos", async (req, res) => {
 });
 
 // ============================================================
-// MENSAGENS AGENDADAS (v4.8) - storage JSON + worker interno
+// INTEGRACAO GREENN (v4.12) - webhook receiver + storage JSON + SSE
 // ============================================================
 const fs = require("fs");
+const GREENN_FILE = process.env.GREENN_FILE || path.join(__dirname, "data", "greenn-events.json");
+const GREENN_TOKEN = process.env.GREENN_WEBHOOK_TOKEN || ""; // se vazio, nao valida (modo aberto)
+const GREENN_MAX_EVENTS = 200;
+fs.mkdirSync(path.dirname(GREENN_FILE), { recursive: true });
+
+function greennLoad() {
+  try { return JSON.parse(fs.readFileSync(GREENN_FILE, "utf8")); } catch { return []; }
+}
+function greennSave(arr) {
+  try { fs.writeFileSync(GREENN_FILE, JSON.stringify(arr.slice(-GREENN_MAX_EVENTS), null, 2)); } catch (e) { console.error("[greenn]", e?.message); }
+}
+
+// Normaliza payload Greenn em formato uniforme pra o frontend
+// Tolera diferentes estruturas: data.customer / data.client / direct fields
+function normalizeGreennPayload(raw) {
+  raw = raw || {};
+  const data = raw.data || raw;
+  const customer = data.customer || data.client || data.buyer || {};
+  const product  = data.product || data.offer || data.item || {};
+  const tx       = data.transaction || data.sale || data.contract || data;
+  const phone    = String(customer.phone || customer.telephone || customer.cellphone || customer.whatsapp || data.phone || "").replace(/\D/g, "");
+  const name     = String(customer.name || customer.full_name || customer.nome || data.name || "").trim();
+  const email    = String(customer.email || data.email || "").trim();
+  const status   = String(tx.status || data.status || raw.event || "").toLowerCase();
+  const productName = String(product.name || product.title || product.product_name || "").trim();
+  const total    = Number(tx.total || tx.amount || tx.value || data.total || 0);
+  const currency = String(tx.currency || "BRL").toUpperCase();
+  return {
+    event: raw.event || data.event || "unknown",
+    type:  raw.type || data.type || "unknown",
+    status, statusLabel: greennStatusLabel(status),
+    phone, name, email,
+    productName,
+    total, currency,
+    transactionId: tx.id || tx.transaction_id || data.transaction_id || null,
+    receivedAt: Date.now(),
+    raw // mantem original pra debug
+  };
+}
+function greennStatusLabel(status) {
+  const m = {
+    paid: "Aprovada", approved: "Aprovada",
+    pending: "Pendente", waiting_payment: "Aguardando pagamento",
+    refused: "Recusada", declined: "Recusada", failed: "Falhou",
+    refunded: "Reembolsada", chargedback: "Chargeback",
+    cancelled: "Cancelada", expired: "Expirou",
+    abandoned: "Carrinho abandonado", checkoutabandoned: "Carrinho abandonado"
+  };
+  return m[status] || status || "—";
+}
+
+app.post("/api/webhook/greenn", (req, res) => {
+  try {
+    // Auth opcional
+    if (GREENN_TOKEN) {
+      const sent = req.headers["x-webhook-token"] || req.headers["authorization"]?.replace(/^Bearer\s+/i, "") || req.query.token;
+      if (sent !== GREENN_TOKEN) {
+        return res.status(401).json({ ok: false, error: "token invalido" });
+      }
+    }
+    const norm = normalizeGreennPayload(req.body);
+    const arr = greennLoad();
+    arr.push(norm);
+    greennSave(arr);
+    // Broadcast SSE pro frontend reagir
+    broadcastSSE({
+      type: "greenn_event",
+      data: {
+        event: norm.event,
+        status: norm.status,
+        statusLabel: norm.statusLabel,
+        name: norm.name,
+        phone: norm.phone,
+        email: norm.email,
+        productName: norm.productName,
+        total: norm.total,
+        currency: norm.currency,
+        transactionId: norm.transactionId,
+        receivedAt: norm.receivedAt
+      }
+    });
+    res.json({ ok: true, normalized: { phone: norm.phone, name: norm.name, status: norm.status } });
+  } catch (e) {
+    console.error("[greenn webhook]", e?.message);
+    res.status(500).json({ ok: false, error: e?.message });
+  }
+});
+
+// Lista eventos recentes (pra UI de Integrações)
+app.get("/api/integrations/greenn/events", (req, res) => {
+  const arr = greennLoad();
+  const limit = Math.min(Number(req.query.limit) || 50, 200);
+  res.json({ ok: true, count: arr.length, items: arr.slice(-limit).reverse() });
+});
+
+// Status da config (sem revelar token)
+app.get("/api/integrations/greenn/status", (req, res) => {
+  res.json({
+    ok: true,
+    enabled: true,
+    tokenConfigured: !!GREENN_TOKEN,
+    webhookUrl: `${req.protocol}://${req.get("host")}/api/webhook/greenn`,
+    eventsCount: greennLoad().length,
+    storageFile: GREENN_FILE
+  });
+});
+
+// ============================================================
+// MENSAGENS AGENDADAS (v4.8) - storage JSON + worker interno
+// ============================================================
 const SCHED_FILE = process.env.SCHEDULED_FILE || path.join(__dirname, "data", "scheduled.json");
 fs.mkdirSync(path.dirname(SCHED_FILE), { recursive: true });
 function schedLoad() {

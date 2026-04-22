@@ -330,6 +330,63 @@ async function run(){
     expect(html.includes("toggleTheme"), "Theme: funcao global");
     expect(html.includes("IMP_THEME_KEY"), "Theme: localStorage");
     expect(html.includes('id="nav-theme"'), "Theme: botao na sidebar");
+    // Greenn v4.12 frontend
+    expect(html.includes("function handleGreennEvent"), "Greenn: handleEvent");
+    expect(html.includes("function renderIntegracoesPage"), "Greenn: renderIntegracoes");
+    expect(html.includes("function greennMatchOrCreateConv"), "Greenn: match/create conv");
+    expect(html.includes("function greennAutoTag"), "Greenn: tag auto");
+    expect(html.includes('greenn_event'), "Greenn: SSE handler");
+  }
+
+  console.log("\n== Teste: Webhook Greenn (v4.12) ==");
+  {
+    // Status endpoint
+    const r1 = await fetch(`http://127.0.0.1:${CRM_PORT}/api/integrations/greenn/status`);
+    const j1 = await r1.json();
+    expect(j1.ok === true, "status endpoint OK");
+    expect(typeof j1.webhookUrl === 'string', "webhookUrl presente");
+    expect(j1.webhookUrl.endsWith('/api/webhook/greenn'), "webhookUrl formato correto");
+
+    // Recebe evento (sem token, modo aberto)
+    const payload = {
+      event: 'saleUpdated', type: 'sale',
+      data: {
+        customer: { name: 'Aluno Teste', phone: '5511988887777', email: 'aluno@test.com' },
+        product: { name: 'Speakers Play - Anual' },
+        transaction: { id: 'tx_abc123', status: 'paid', total: 1497, currency: 'BRL' }
+      }
+    };
+    const r2 = await fetch(`http://127.0.0.1:${CRM_PORT}/api/webhook/greenn`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const j2 = await r2.json();
+    expect(j2.ok === true, "webhook aceitou payload");
+    expect(j2.normalized && j2.normalized.phone === '5511988887777', "normalizou phone");
+    expect(j2.normalized && j2.normalized.name === 'Aluno Teste', "normalizou nome");
+    expect(j2.normalized && j2.normalized.status === 'paid', "normalizou status");
+
+    // Lista eventos
+    const r3 = await fetch(`http://127.0.0.1:${CRM_PORT}/api/integrations/greenn/events?limit=10`);
+    const j3 = await r3.json();
+    expect(j3.ok === true && Array.isArray(j3.items), "list events OK");
+    expect(j3.items.length >= 1, "evento aparece na lista");
+    expect(j3.items[0].statusLabel === 'Aprovada', "statusLabel mapeado pra Aprovada");
+    expect(j3.items[0].productName === 'Speakers Play - Anual', "productName preservado");
+    expect(j3.items[0].total === 1497, "total preservado");
+
+    // SSE broadcast: cria conexao SSE e dispara webhook, conferindo que evento chega
+    const ssePromise = collectSSE(1500);
+    await sleep(100);
+    await fetch(`http://127.0.0.1:${CRM_PORT}/api/webhook/greenn`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: 'saleUpdated', data: { customer: { phone: '5511777776666', name: 'SSE Test' }, transaction: { status: 'refused' } } })
+    });
+    const events = await ssePromise;
+    const grEvt = events.find(e => e.type === 'greenn_event');
+    expect(!!grEvt, "SSE broadcast greenn_event recebido");
+    expect(grEvt && grEvt.data && grEvt.data.status === 'refused', "status refused na SSE");
+    expect(grEvt && grEvt.data && grEvt.data.statusLabel === 'Recusada', "statusLabel Recusada");
   }
 
   console.log("\n== Teste: API agendamento (v4.8) ==");

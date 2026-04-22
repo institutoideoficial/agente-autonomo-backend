@@ -247,6 +247,32 @@ body{background:var(--bg);color:var(--text);height:100vh;display:flex;overflow:h
 .ag-act button{background:var(--panel2);color:var(--text);border:none;border-radius:6px;padding:7px 12px;font-size:11px;cursor:pointer}
 .ag-act button:hover{background:#3a1a1a;color:#ef4444}
 
+/* INTEGRACOES PAGE (v4.12) */
+.int-page{padding:24px;overflow-y:auto;height:100%;background:var(--bg);max-width:900px;margin:0 auto}
+.int-page h2{font-size:22px;margin-bottom:6px}
+.int-sub{color:var(--text2);font-size:13px;margin-bottom:18px}
+.int-card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:16px}
+.int-card h3{display:flex;align-items:center;gap:10px;font-size:15px;margin-bottom:10px}
+.int-card h3 .int-badge{background:#0d2818;color:#10b981;font-size:10px;padding:2px 8px;border-radius:8px;text-transform:uppercase;font-weight:700}
+.int-row{display:flex;align-items:center;gap:10px;margin-bottom:10px;font-size:13px}
+.int-row strong{color:var(--text2);min-width:130px}
+.int-url{flex:1;background:var(--bg);padding:8px 11px;border-radius:6px;color:var(--gold);font-family:monospace;font-size:12px;word-break:break-all;border:1px solid var(--border)}
+.int-cp{background:var(--gold);color:#111;border:none;border-radius:6px;padding:8px 14px;cursor:pointer;font-weight:700;font-size:12px}
+.int-cp:hover{background:#f4d03f}
+.int-events{margin-top:18px}
+.int-events h3{font-size:14px;margin-bottom:10px}
+.int-evt{display:flex;align-items:center;gap:12px;padding:11px 13px;background:var(--panel);border:1px solid var(--border);border-radius:8px;margin-bottom:6px;font-size:12px}
+.int-evt-status{padding:3px 9px;border-radius:9px;font-size:10px;font-weight:700;text-transform:uppercase;flex-shrink:0}
+.int-evt-status.paid,.int-evt-status.approved{background:#0d2818;color:#10b981}
+.int-evt-status.pending,.int-evt-status.waiting_payment{background:#3a2e0a;color:var(--gold)}
+.int-evt-status.refused,.int-evt-status.declined,.int-evt-status.failed{background:#3a1a1a;color:#ef4444}
+.int-evt-status.refunded,.int-evt-status.chargedback,.int-evt-status.cancelled{background:var(--panel2);color:var(--text2)}
+.int-evt-status.abandoned{background:#2d1f3a;color:var(--purple)}
+.int-evt-info{flex:1;min-width:0}
+.int-evt-name{font-weight:600;color:var(--text)}
+.int-evt-meta{font-size:11px;color:var(--text2);margin-top:2px}
+.int-evt-val{color:var(--gold);font-weight:700}
+
 /* CONV LIST */
 #cl{flex:1;overflow-y:auto}
 #cl::-webkit-scrollbar{width:4px}
@@ -618,6 +644,7 @@ function navTo(sec){
   else if(sec==='tags') renderTagsPage(main);
   else if(sec==='lixeira') renderTrashPage(main);
   else if(sec==='agenda') renderAgendaPage(main);
+  else if(sec==='integ') renderIntegracoesPage(main);
   else if(PLACEHOLDERS[sec]) renderPlaceholder(main, sec);
 }
 
@@ -707,12 +734,7 @@ var PLACEHOLDERS={
     desc:'<strong style="color:#ef4444">CUIDADO:</strong> envio em massa pelo whatsapp-web.js (nao-oficial) <strong>banca o numero rapido</strong>. Esta feature foi pensada mas nao sera implementada nesta versao por seguranca. Use a API Oficial Cloud do Meta se realmente precisar disparar pra muitos.',
     features:['<span style="color:#f59e0b">Risco alto de ban</span>','Use API Oficial pra disparos','Limite seguro: ~30 msgs/dia','Conversas 1:1 sao livres']
   },
-  integ: {
-    icon:'<svg width="34" height="34" viewBox="0 0 24 24" fill="currentColor"><path d="M20.5 11H19V7c0-1.1-.9-2-2-2h-4V3.5C13 2.12 11.88 1 10.5 1S8 2.12 8 3.5V5H4c-1.1 0-1.99.9-1.99 2v3.8H3.5c1.49 0 2.7 1.21 2.7 2.7s-1.21 2.7-2.7 2.7H2V20c0 1.1.9 2 2 2h3.8v-1.5c0-1.49 1.21-2.7 2.7-2.7s2.7 1.21 2.7 2.7V22H17c1.1 0 2-.9 2-2v-4h1.5c1.38 0 2.5-1.12 2.5-2.5S21.88 11 20.5 11z"/></svg>',
-    title:'Integracoes',
-    desc:'Conecte o CRM com outras ferramentas. Hoje conecta com Bravos (motor WhatsApp) e Anthropic (bot opcional).',
-    features:['Webhook generico (URL custom)','Google Calendar','Stripe / Mercado Pago','Hotmart / Eduzz (alunos)','Zapier / Make']
-  },
+  
   
   notif: {
     icon:'<svg width="34" height="34" viewBox="0 0 24 24" fill="currentColor"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>',
@@ -1128,6 +1150,141 @@ async function agendaSubmit(){
   } else {
     alert('Erro: '+(d.error||'desconhecido'));
   }
+}
+
+// === INTEGRACAO GREENN (v4.12) ===
+function greennMatchOrCreateConv(ev){
+  // Procura conv real existente pelo telefone
+  if(!ev || !ev.phone) return null;
+  var key = "w" + ev.phone;
+  var name = ev.name || ev.email || ev.phone;
+  // Cria conv se nao existir
+  if(!convs[key]){
+    convs[key] = {
+      id: key, nm: name, ph: ev.phone,
+      dept: 'Greenn', st: 'open', tag: '', ag: 'thiago',
+      msgs: [], nota: ev.email ? ('Email: '+ev.email) : '',
+      real: true, chatId: ev.phone+'@c.us', historyLoaded: true
+    };
+  } else {
+    if(!convs[key].nm || convs[key].nm===ev.phone) convs[key].nm = name;
+  }
+  return convs[key];
+}
+function greennAutoTag(status){
+  // Mapeia status -> etiqueta. Cria etiqueta se nao existir.
+  var map = {
+    paid: 'comprou', approved: 'comprou',
+    refused: 'recusada', declined: 'recusada', failed: 'recusada',
+    refunded: 'reembolso', chargedback: 'chargeback',
+    abandoned: 'abandonou', checkoutabandoned: 'abandonou',
+    pending: 'aguardando', waiting_payment: 'aguardando'
+  };
+  var tagName = map[String(status||'').toLowerCase()] || '';
+  if(!tagName) return '';
+  // Garante existencia da etiqueta
+  if(typeof loadTags==='function'){
+    var tags = loadTags();
+    if(!tags.find(function(t){return t.name===tagName;})){
+      var colors = {comprou:'#10b981',recusada:'#ef4444',reembolso:'#f59e0b',chargeback:'#dc2626',abandonou:'#8b5cf6',aguardando:'#3b82f6'};
+      tags.push({name:tagName, color: colors[tagName]||'#6b7280'});
+      if(typeof saveTags==='function') saveTags(tags);
+    }
+  }
+  return tagName;
+}
+function handleGreennEvent(ev){
+  try{
+    if(!ev) return;
+    var conv = greennMatchOrCreateConv(ev);
+    if(!conv) return;
+    // Aplica tag automatica
+    var tag = greennAutoTag(ev.status);
+    if(tag) conv.tag = tag;
+    // Adiciona msg de notificacao no chat (tipo nota interna)
+    var emoji = ({paid:'✅',approved:'✅',refused:'❌',declined:'❌',failed:'❌',refunded:'↩️',chargedback:'⚠️',abandoned:'🛒',pending:'⏳',waiting_payment:'⏳'})[String(ev.status||'').toLowerCase()] || 'ℹ️';
+    var valor = ev.total ? ' R$ '+Number(ev.total).toFixed(2) : '';
+    var noteText = emoji+' Greenn: '+(ev.statusLabel||ev.status)+(ev.productName?' — '+ev.productName:'')+valor;
+    conv.msgs.push({r:'note', t:noteText, ts:new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})});
+    // Re-render se for a conv aberta
+    if(typeof renderSB==='function') renderSB();
+    if(window.cur === conv.id){
+      if(typeof renderMsgs==='function') renderMsgs(conv.id);
+      if(typeof renderRP==='function') renderRP(conv.id);
+    }
+    // Toast + som (se status 'comprou' relevante)
+    if(typeof toast==='function'){
+      toast(emoji+' '+ev.name+': '+ev.statusLabel+(valor?valor:''));
+    }
+    if(typeof playBeep==='function' && (ev.status==='paid' || ev.status==='approved')) playBeep();
+    if(typeof showNotif==='function') showNotif('Greenn — '+ev.statusLabel, ev.name+(valor?valor:''));
+  }catch(e){ console.warn('[greenn] handleEvent err', e); }
+}
+
+async function fetchGreennStatus(){
+  try{
+    var r = await fetch('/api/integrations/greenn/status');
+    return await r.json();
+  }catch(e){ return null; }
+}
+async function fetchGreennEvents(limit){
+  try{
+    var r = await fetch('/api/integrations/greenn/events?limit='+(limit||50));
+    var d = await r.json();
+    return d.items || [];
+  }catch(e){ return []; }
+}
+
+async function renderIntegracoesPage(main){
+  var st = await fetchGreennStatus();
+  var events = await fetchGreennEvents(30);
+  var url = (st && st.webhookUrl) || (location.origin + '/api/webhook/greenn');
+  var tokenStatus = (st && st.tokenConfigured)
+    ? '<span style="color:#10b981">✓ Configurado (env GREENN_WEBHOOK_TOKEN)</span>'
+    : '<span style="color:#f59e0b">⚠ Sem token (modo aberto). Configure GREENN_WEBHOOK_TOKEN no servidor pra seguranca.</span>';
+  var html = '<div class="int-page">'+
+    '<h2>🔌 Integrações</h2>'+
+    '<div class="int-sub">Conecte plataformas externas pra disparar eventos no CRM. Cada evento vira nota automatica na conversa do contato e aplica etiqueta colorida.</div>'+
+
+    '<div class="int-card">'+
+      '<h3>Greenn <span class="int-badge">Ativa</span></h3>'+
+      '<div class="int-sub" style="margin-bottom:14px">Plataforma de pagamento. Recebe eventos de venda/assinatura/checkout. Configure o webhook no painel da Greenn em Produtos &gt; seu produto &gt; Conteudos &gt; Adicionar &gt; Sistema externo &gt; Webhook.</div>'+
+      '<div class="int-row"><strong>Webhook URL:</strong><div class="int-url" id="greenn-url">'+esc(url)+'</div><button class="int-cp" onclick="navigator.clipboard.writeText(document.getElementById(\'greenn-url\').textContent).then(function(){toast(\'URL copiada\')})">Copiar</button></div>'+
+      '<div class="int-row"><strong>Token (header):</strong><div class="int-url">X-Webhook-Token: ••••••••</div></div>'+
+      '<div class="int-row"><strong>Status do token:</strong>&nbsp;'+tokenStatus+'</div>'+
+      '<div class="int-row"><strong>Eventos recebidos:</strong>&nbsp;'+(st?st.eventsCount:0)+'</div>'+
+    '</div>'+
+
+    '<div class="int-card">'+
+      '<h3>Etiquetas automaticas</h3>'+
+      '<div class="int-sub">Cada status vira uma etiqueta colorida no contato:</div>'+
+      '<div style="display:flex;flex-wrap:wrap;gap:6px">'+
+        ['comprou:#10b981','recusada:#ef4444','reembolso:#f59e0b','chargeback:#dc2626','abandonou:#8b5cf6','aguardando:#3b82f6'].map(function(s){
+          var p=s.split(':'); return '<span class="tag-chip" style="background:'+p[1]+';font-size:10px;padding:3px 10px">'+p[0]+'</span>';
+        }).join('')+
+      '</div>'+
+    '</div>'+
+
+    '<div class="int-events">'+
+      '<h3>Ultimos eventos ('+events.length+')</h3>';
+  if(events.length===0){
+    html += '<div style="color:var(--text2);text-align:center;padding:24px;font-style:italic">Nenhum evento ainda. Configure o webhook no painel da Greenn pra comecar.</div>';
+  } else {
+    events.forEach(function(ev){
+      var when = new Date(ev.receivedAt).toLocaleString('pt-BR');
+      var valor = ev.total ? ' &middot; <span class="int-evt-val">R$ '+Number(ev.total).toFixed(2)+'</span>' : '';
+      html += '<div class="int-evt">'+
+        '<span class="int-evt-status '+esc(ev.status||'unknown')+'">'+esc(ev.statusLabel||ev.status||'?')+'</span>'+
+        '<div class="int-evt-info">'+
+          '<div class="int-evt-name">'+esc(ev.name||ev.email||ev.phone||'(sem nome)')+(ev.productName?' &middot; '+esc(ev.productName):'')+'</div>'+
+          '<div class="int-evt-meta">'+when+(ev.phone?' &middot; '+esc(ev.phone):'')+valor+'</div>'+
+        '</div>'+
+      '</div>';
+    });
+  }
+  html += '</div></div>';
+  main.style.cssText = '';
+  main.innerHTML = html;
 }
 
 function computeMetrics(){
@@ -1925,6 +2082,7 @@ setTimeout(checkStatus,2000);
         if(!evt || !evt.type) return;
         if(evt.type === "whatsapp_ready"){ checkConnection(); return; }
         if(evt.type === "whatsapp_disconnected"){ checkConnection(); toast("WhatsApp desconectou"); return; }
+        if(evt.type === "greenn_event"){ if(typeof handleGreennEvent==='function') handleGreennEvent(evt.data); return; }
         if(evt.type === "message_in"){ handleRealRow(evt.data, false); return; }
         if(evt.type === "message_out"){ handleRealRow(evt.data, true); return; }
         // fallback legado: backend antigo emitia sempre "new_message" com payload embrulhado
