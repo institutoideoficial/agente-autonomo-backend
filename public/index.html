@@ -94,6 +94,33 @@ body{background:var(--bg);color:var(--text);height:100vh;display:flex;overflow:h
 .qa-btn.danger:hover{background:#3a1a1a;border-color:#ef4444;color:#ef4444}
 .qa-btn.toggled{background:var(--gold3);border-color:var(--gold);color:var(--gold)}
 
+/* TEMPLATES PAGE (v4.3) */
+.tpl-page{max-width:780px;margin:0 auto;padding:24px}
+.tpl-page h2{font-size:22px;margin-bottom:6px}
+.tpl-page .tpl-sub{color:var(--text2);font-size:13px;margin-bottom:20px}
+.tpl-list{display:flex;flex-direction:column;gap:10px;margin-bottom:24px}
+.tpl-card{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px 16px;display:flex;gap:12px;align-items:flex-start}
+.tpl-card:hover{border-color:var(--gold3)}
+.tpl-name{font-weight:600;color:var(--gold);margin-bottom:4px;font-size:14px}
+.tpl-text{color:var(--text);font-size:13px;line-height:1.5;white-space:pre-wrap}
+.tpl-body{flex:1;min-width:0}
+.tpl-act{display:flex;gap:6px;flex-shrink:0}
+.tpl-act button{background:var(--panel2);color:var(--text2);border:none;border-radius:6px;padding:6px 10px;cursor:pointer;font-size:12px}
+.tpl-act button:hover{background:var(--gold3);color:var(--gold)}
+.tpl-act button.danger:hover{background:#3a1a1a;color:#ef4444}
+.tpl-add{background:var(--gold);color:#111;border:none;border-radius:8px;padding:10px 18px;font-size:14px;font-weight:700;cursor:pointer}
+.tpl-add:hover{background:#f4d03f}
+.tpl-form{background:var(--panel);border:1px solid var(--gold3);border-radius:10px;padding:16px;margin-bottom:20px}
+.tpl-form input,.tpl-form textarea{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 11px;color:var(--text);font-size:13px;margin-bottom:10px;font-family:inherit}
+.tpl-form textarea{min-height:90px;resize:vertical}
+.tpl-form input:focus,.tpl-form textarea:focus{outline:none;border-color:var(--gold)}
+.tpl-vars{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.tpl-vars span{background:var(--panel2);color:var(--gold);padding:3px 9px;border-radius:10px;font-size:11px;cursor:pointer;border:1px dashed var(--gold3)}
+.tpl-vars span:hover{background:var(--gold3)}
+.tpl-form .row{display:flex;gap:8px;justify-content:flex-end;margin-top:8px}
+.tpl-form .row button{background:var(--panel2);color:var(--text);border:none;border-radius:6px;padding:8px 16px;cursor:pointer;font-size:13px}
+.tpl-form .row button.primary{background:var(--gold);color:#111;font-weight:700}
+
 /* CONV LIST */
 #cl{flex:1;overflow-y:auto}
 #cl::-webkit-scrollbar{width:4px}
@@ -401,12 +428,37 @@ body{background:var(--bg);color:var(--text);height:100vh;display:flex;overflow:h
 var cur=null,qi=null,curTab='all',curFilter='all',botAtivo={};
 var COLORS=['#1d3557','#2d6a4f','#6a0572','#3a86ff','#c77dff','#e07b39','#2a9d8f','#d62828'];
 var AGENTES={bot:'Bot IA',thiago:'Thiago Labastie',vanessa:'Vanessa Labastie'};
-var QRS=[
-  {n:'Saudacao',t:'Ola! Obrigado por entrar em contato. Como posso ajudar?'},
-  {n:'Aguardar',t:'Aguarde um momento, vou verificar isso para voce!'},
-  {n:'Horario',t:'Nosso horario e segunda a sexta das 8h as 18h.'},
-  {n:'Encerramento',t:'Muito obrigado pelo contato! Qualquer duvida estamos a disposicao.'}
+var IMP_TPL_KEY="imp_tpl_v1";
+var QRS_DEFAULTS=[
+  {n:'Saudacao',    t:'Ola {nome}! Obrigado por entrar em contato. Como posso ajudar?'},
+  {n:'Aguardar',    t:'Aguarde um momento, vou verificar isso para voce!'},
+  {n:'Horario',     t:'Nosso horario eh segunda a sexta das 8h as 18h.'},
+  {n:'Encerramento',t:'Muito obrigado pelo contato {nome}! Qualquer duvida estamos a disposicao.'},
+  {n:'Pix',         t:'Segue chave Pix pra pagamento: editoralabastie@gmail.com (CPF). Me confirma quando concluir, por favor.'},
+  {n:'Boleto',      t:'Te envio o boleto agora pelo WhatsApp. Vencimento amanha. Qualquer coisa, fala comigo {nome}!'}
 ];
+function loadTemplates(){
+  try{
+    var raw=localStorage.getItem(IMP_TPL_KEY);
+    if(!raw) return QRS_DEFAULTS.slice();
+    var arr=JSON.parse(raw);
+    return Array.isArray(arr)&&arr.length?arr:QRS_DEFAULTS.slice();
+  }catch(e){ return QRS_DEFAULTS.slice(); }
+}
+function saveTemplates(arr){ try{ localStorage.setItem(IMP_TPL_KEY, JSON.stringify(arr||[])); }catch(e){} }
+var QRS=loadTemplates();
+function expandVars(text){
+  var c=cur&&convs[cur]?convs[cur]:{};
+  var nm=(c.nm||'').split(' ')[0]||'';
+  var d=new Date();
+  var hr=d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+  var dia=d.toLocaleDateString('pt-BR',{weekday:'long'});
+  return String(text||'')
+    .replace(/\{nome\}/g, nm)
+    .replace(/\{hora\}/g, hr)
+    .replace(/\{dia\}/g, dia)
+    .replace(/\{telefone\}/g, c.ph||'');
+}
 var convs={};
 
 function h(){return new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});}
@@ -434,7 +486,83 @@ function navTo(sec){
   else if(sec==='contacts') renderContacts(main);
   else if(sec==='reports') renderReports(main);
   else if(sec==='config') renderConfig(main);
+  else if(sec==='templates') renderTemplatesPage(main);
   else if(PLACEHOLDERS[sec]) renderPlaceholder(main, sec);
+}
+
+// renderTemplatesPage: CRUD de respostas rapidas com variaveis
+var _tplEditing = null; // null ou index do array em edicao
+function renderTemplatesPage(main){
+  var tpls = loadTemplates();
+  var html = '<div class="tpl-page">'+
+    '<h2>Respostas Rapidas</h2>'+
+    '<div class="tpl-sub">Atalhos pra responder rapido. Use <code style="background:var(--panel2);padding:1px 6px;border-radius:4px">{nome}</code>, <code style="background:var(--panel2);padding:1px 6px;border-radius:4px">{hora}</code>, <code style="background:var(--panel2);padding:1px 6px;border-radius:4px">{dia}</code>, <code style="background:var(--panel2);padding:1px 6px;border-radius:4px">{telefone}</code> que se substituem ao enviar. No campo de mensagem digite <code style="background:var(--panel2);padding:1px 6px;border-radius:4px">/tmp:saudacao</code> pra inserir.</div>'+
+    '<button class="tpl-add" onclick="tplOpenForm()">+ Novo template</button>'+
+    '<div id="tpl-form-container"></div>'+
+    '<div class="tpl-list">';
+  tpls.forEach(function(t,i){
+    html += '<div class="tpl-card">'+
+      '<div class="tpl-body">'+
+        '<div class="tpl-name">'+esc(t.n)+'</div>'+
+        '<div class="tpl-text">'+esc(t.t)+'</div>'+
+      '</div>'+
+      '<div class="tpl-act">'+
+        '<button onclick="tplOpenForm('+i+')">Editar</button>'+
+        '<button class="danger" onclick="tplDelete('+i+')">Excluir</button>'+
+      '</div>'+
+    '</div>';
+  });
+  html += '</div></div>';
+  main.innerHTML = html;
+}
+function tplOpenForm(idx){
+  _tplEditing = (typeof idx==='number')?idx:null;
+  var tpls = loadTemplates();
+  var t = (_tplEditing!==null)?tpls[_tplEditing]:{n:'',t:''};
+  var c = document.getElementById('tpl-form-container'); if(!c) return;
+  c.innerHTML = '<div class="tpl-form">'+
+    '<input type="text" id="tpl-name" placeholder="Nome do template (ex: Saudacao)" value="'+esc(t.n)+'">'+
+    '<textarea id="tpl-text" placeholder="Texto. Use {nome}, {hora}, {dia}, {telefone}">'+esc(t.t)+'</textarea>'+
+    '<div class="tpl-vars">'+
+      '<span onclick="tplInsertVar(\'{nome}\')">+ {nome}</span>'+
+      '<span onclick="tplInsertVar(\'{hora}\')">+ {hora}</span>'+
+      '<span onclick="tplInsertVar(\'{dia}\')">+ {dia}</span>'+
+      '<span onclick="tplInsertVar(\'{telefone}\')">+ {telefone}</span>'+
+    '</div>'+
+    '<div class="row">'+
+      '<button onclick="tplCancel()">Cancelar</button>'+
+      '<button class="primary" onclick="tplSave()">'+(_tplEditing!==null?'Salvar alteracoes':'Criar template')+'</button>'+
+    '</div>'+
+  '</div>';
+  document.getElementById('tpl-name').focus();
+}
+function tplInsertVar(v){
+  var ta=document.getElementById('tpl-text'); if(!ta) return;
+  var s=ta.selectionStart||ta.value.length;
+  ta.value = ta.value.slice(0,s) + v + ta.value.slice(s);
+  ta.focus(); ta.selectionStart=ta.selectionEnd=s+v.length;
+}
+function tplCancel(){ var c=document.getElementById('tpl-form-container'); if(c) c.innerHTML=''; _tplEditing=null; }
+function tplSave(){
+  var n=document.getElementById('tpl-name').value.trim();
+  var t=document.getElementById('tpl-text').value.trim();
+  if(!n||!t){ alert('Preencha nome e texto'); return; }
+  var tpls = loadTemplates();
+  if(_tplEditing!==null){ tpls[_tplEditing] = {n:n,t:t}; }
+  else { tpls.push({n:n,t:t}); }
+  saveTemplates(tpls);
+  QRS = tpls;
+  _tplEditing = null;
+  renderTemplatesPage(document.getElementById('main'));
+  if(typeof toast==='function') toast('Template salvo');
+}
+function tplDelete(i){
+  if(!confirm('Excluir template?')) return;
+  var tpls=loadTemplates();
+  tpls.splice(i,1);
+  saveTemplates(tpls);
+  QRS = tpls;
+  renderTemplatesPage(document.getElementById('main'));
 }
 
 // Placeholders das features novas (sidebar Waseller)
@@ -451,12 +579,7 @@ var PLACEHOLDERS={
     desc:'Crie suas proprias categorias coloridas. Por enquanto use os filtros pill no topo da lista de conversas.',
     features:['Cores personalizadas','Filtro por etiqueta','Multiplas etiquetas por contato','Atribuicao em massa']
   },
-  templates: {
-    icon:'<svg width="34" height="34" viewBox="0 0 24 24" fill="currentColor"><path d="M7 2v11h3v9l7-12h-4l4-8z"/></svg>',
-    title:'Respostas rapidas',
-    desc:'Atalhos de texto pra responder com 1 clique. Ja tem 4 templates default no painel direito de cada conversa.',
-    features:['Editor com variaveis ({nome}, {hora})','Categorias por tema','Atalhos de teclado','Templates por departamento']
-  },
+  
   disparos: {
     icon:'<svg width="34" height="34" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>',
     title:'Disparos em massa',
@@ -717,6 +840,20 @@ function addTyping(){
 function enviar(){
   var fi=document.getElementById('minp');if(!fi||!cur)return;
   var t=fi.value.trim();if(!t)return;
+  // v4.3: atalho /tmp:nome expande pro template
+  var tplMatch = t.match(/^\/tmp:([\w-]+)\s*(.*)$/);
+  if(tplMatch){
+    var tplName = tplMatch[1].toLowerCase();
+    var extra = tplMatch[2];
+    var found = (loadTemplates()||[]).find(function(x){return (x.n||'').toLowerCase()===tplName;});
+    if(found){
+      t = expandVars(found.t) + (extra ? ' '+extra : '');
+      fi.value = t;
+    }
+  } else {
+    // sempre expande variaveis se a msg contiver {algo}
+    if(/\{(nome|hora|dia|telefone)\}/.test(t)){ t = expandVars(t); fi.value = t; }
+  }
   fi.value='';fi.style.height='auto';
   var m={r:'out',t:t,ts:h()};
   convs[cur].msgs.push(m);
@@ -901,7 +1038,12 @@ function addTag(){
 
 function usarQR(txt){
   var fi=document.getElementById('minp');if(!fi)return;
-  if(txt)fi.value=txt;fi.focus();
+  if(txt){
+    var expanded=(typeof expandVars==='function')?expandVars(txt):txt;
+    fi.value=expanded;
+    fi.style.height='auto'; fi.style.height=Math.min(fi.scrollHeight,110)+'px';
+  }
+  fi.focus();
 }
 
 function confirmarTrf(){

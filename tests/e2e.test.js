@@ -266,6 +266,19 @@ async function run(){
     expect(!html.includes("ð¤"), "mojibake 🤖 corrigido");
     expect(!html.includes("ð¾"), "mojibake 💾 corrigido");
     expect(!html.includes("â¡ Rapida"), "mojibake ⚡ corrigido");
+    // Templates v4.3
+    expect(html.includes("renderTemplatesPage"), "Templates: render CRUD presente");
+    expect(html.includes("loadTemplates"), "Templates: loadTemplates definido");
+    expect(html.includes("saveTemplates"), "Templates: saveTemplates definido");
+    expect(html.includes("expandVars"), "Templates: expandVars definido");
+    expect(html.includes("IMP_TPL_KEY"), "Templates: localStorage key");
+    expect(html.includes("function tplOpenForm"), "Templates: form opener");
+    expect(html.includes("function tplSave"), "Templates: save");
+    expect(html.includes("function tplDelete"), "Templates: delete");
+    expect(html.includes("/tmp:"), "Templates: atalho /tmp: documentado");
+    expect(html.includes("{nome}"), "Templates: variavel {nome}");
+    expect(html.includes("{hora}"), "Templates: variavel {hora}");
+    expect(html.includes("QRS_DEFAULTS"), "Templates: array default");
   }
 
   console.log("\n== Teste: GET / serve welcome.html ==");
