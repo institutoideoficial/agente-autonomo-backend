@@ -94,6 +94,28 @@ body{background:var(--bg);color:var(--text);height:100vh;display:flex;overflow:h
 .pi-tx{flex:1;font-size:14px;font-weight:500}
 .pi-ct{font-size:11px;color:var(--gold);background:var(--gold3);padding:2px 9px;border-radius:10px;font-weight:700}
 
+/* GREENN SECTION no painel direito (v4.13) */
+.g-status{display:inline-block;padding:5px 12px;border-radius:10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px}
+.g-status.g-ok{background:#0d2818;color:#10b981}
+.g-status.g-err{background:#3a1a1a;color:#ef4444}
+.g-status.g-warn{background:#2d1f3a;color:#8b5cf6}
+.g-status.g-pending{background:#3a2e0a;color:var(--gold)}
+.g-summary{background:var(--panel2);border-radius:8px;padding:10px;margin-bottom:10px}
+.g-summary > div{display:flex;justify-content:space-between;font-size:12px;padding:3px 0}
+.g-lbl{color:var(--text2)}
+.g-val{color:var(--gold);font-weight:700}
+.g-events{margin-bottom:10px}
+.g-evt{display:flex;gap:6px;font-size:11px;padding:5px 8px;border-radius:6px;background:var(--panel2);margin-bottom:3px;align-items:center}
+.g-evt-label{padding:1px 7px;border-radius:7px;font-size:9px;font-weight:700;text-transform:uppercase;flex-shrink:0;letter-spacing:.3px}
+.g-evt-label.paid,.g-evt-label.approved{background:#0d2818;color:#10b981}
+.g-evt-label.refused,.g-evt-label.declined,.g-evt-label.failed{background:#3a1a1a;color:#ef4444}
+.g-evt-label.refunded,.g-evt-label.chargedback{background:#2a1a0a;color:#f59e0b}
+.g-evt-label.abandoned{background:#2d1f3a;color:#8b5cf6}
+.g-evt-prod{flex:1;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.g-evt-meta{color:var(--text2);font-size:10px;flex-shrink:0}
+.g-btn{width:100%;background:var(--panel2);color:var(--gold);border:1px solid var(--gold3);border-radius:8px;padding:8px;cursor:pointer;font-size:12px;font-weight:600}
+.g-btn:hover{background:var(--gold3)}
+
 /* Quick Actions Grid (v4.2 painel direito Waseller-style) */
 .qa-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:4px}
 .qa-btn{display:flex;flex-direction:column;align-items:center;gap:5px;padding:11px 4px;background:var(--panel2);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:11px;font-weight:500;cursor:pointer;transition:all .15s;text-align:center}
@@ -589,7 +611,11 @@ var QRS_DEFAULTS=[
   {n:'Horario',     t:'Nosso horario eh segunda a sexta das 8h as 18h.'},
   {n:'Encerramento',t:'Muito obrigado pelo contato {nome}! Qualquer duvida estamos a disposicao.'},
   {n:'Pix',         t:'Segue chave Pix pra pagamento: editoralabastie@gmail.com (CPF). Me confirma quando concluir, por favor.'},
-  {n:'Boleto',      t:'Te envio o boleto agora pelo WhatsApp. Vencimento amanha. Qualquer coisa, fala comigo {nome}!'}
+  {n:'Boleto',      t:'Te envio o boleto agora pelo WhatsApp. Vencimento amanha. Qualquer coisa, fala comigo {nome}!'},
+  {n:'Greenn-BoasVindas', t:'{nome}, que felicidade ter voce com a gente! 🌟\n\nSua matricula em {produto} foi aprovada! ({valor})\n\nEm instantes voce recebe o acesso. Qualquer duvida me chama por aqui mesmo.\n\nBora transformar sua oratoria? ✨'},
+  {n:'Greenn-Abandono',   t:'Oi {nome}! Vi que voce comecou a compra do {produto} e parou no meio do caminho. Deu algum problema? Posso te ajudar em alguma etapa?\n\nSe for financeiro, conseguimos te ajudar com parcelamento ou Pix. Qualquer coisa eu resolvo por aqui!'},
+  {n:'Greenn-Recusada',   t:'{nome}, sua compra do {produto} nao foi aprovada ({statusLabel}). Podemos tentar outra forma de pagamento? Tenho Pix, cartao (a vista ou parcelado) e boleto.\n\nSe preferir, te passo um link novo.'},
+  {n:'Greenn-Reembolso',  t:'{nome}, confirmei o reembolso do {produto} ({valor}). Chega na sua conta em ate 7 dias uteis do mesmo cartao/metodo que pagou.\n\nSe mudar de ideia e quiser reativar, e so me avisar!'}
 ];
 function loadTemplates(){
   try{
@@ -607,11 +633,19 @@ function expandVars(text){
   var d=new Date();
   var hr=d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
   var dia=d.toLocaleDateString('pt-BR',{weekday:'long'});
+  var gl=(c.greennLast||{});
+  var produto = gl.productName || '';
+  var valor   = (typeof gl.total === 'number' && gl.total>0) ? ('R$ '+gl.total.toFixed(2).replace('.',',')) : '';
+  var statusLabel = gl.statusLabel || '';
   return String(text||'')
     .replace(/\{nome\}/g, nm)
     .replace(/\{hora\}/g, hr)
     .replace(/\{dia\}/g, dia)
-    .replace(/\{telefone\}/g, c.ph||'');
+    .replace(/\{telefone\}/g, c.ph||'')
+    .replace(/\{email\}/g, c.email||(c.nota&&c.nota.match(/Email:\s*(\S+)/)?c.nota.match(/Email:\s*(\S+)/)[1]:''))
+    .replace(/\{produto\}/g, produto)
+    .replace(/\{valor\}/g, valor)
+    .replace(/\{statusLabel\}/g, statusLabel);
 }
 var convs={};
 
@@ -1154,11 +1188,9 @@ async function agendaSubmit(){
 
 // === INTEGRACAO GREENN (v4.12) ===
 function greennMatchOrCreateConv(ev){
-  // Procura conv real existente pelo telefone
   if(!ev || !ev.phone) return null;
   var key = "w" + ev.phone;
   var name = ev.name || ev.email || ev.phone;
-  // Cria conv se nao existir
   if(!convs[key]){
     convs[key] = {
       id: key, nm: name, ph: ev.phone,
@@ -1169,6 +1201,19 @@ function greennMatchOrCreateConv(ev){
   } else {
     if(!convs[key].nm || convs[key].nm===ev.phone) convs[key].nm = name;
   }
+  // v4.13: guarda historico completo no proprio contato (ate 20 eventos)
+  if(!Array.isArray(convs[key].greennHistory)) convs[key].greennHistory = [];
+  convs[key].greennHistory.push({
+    status: ev.status,
+    statusLabel: ev.statusLabel,
+    productName: ev.productName,
+    total: ev.total,
+    currency: ev.currency,
+    transactionId: ev.transactionId,
+    at: ev.receivedAt || Date.now()
+  });
+  if(convs[key].greennHistory.length > 20) convs[key].greennHistory = convs[key].greennHistory.slice(-20);
+  convs[key].greennLast = convs[key].greennHistory[convs[key].greennHistory.length-1];
   return convs[key];
 }
 function greennAutoTag(status){
@@ -1549,6 +1594,48 @@ function renderRP(id){
     ql.classList.toggle('toggled', isLk);
     var l2=ql.querySelector('span:last-child'); if(l2) l2.textContent=isLk?'Destrancar':'Trancar';
   }
+  // v4.13: insere secao Historico Greenn se tiver eventos
+  renderGreennSection(id);
+}
+
+function renderGreennSection(id){
+  var c = convs[id]; if(!c) return;
+  var right = document.getElementById('right'); if(!right) return;
+  // Remove secao antiga se houver
+  var old = document.getElementById('rps-greenn');
+  if(old) old.remove();
+  var hist = c.greennHistory || [];
+  if(hist.length===0) return;
+  // Agrega metricas do contato
+  var aprovadas = hist.filter(function(h){return h.status==='paid'||h.status==='approved';});
+  var totalGasto = aprovadas.reduce(function(s,h){return s+(Number(h.total)||0);}, 0);
+  var last = hist[hist.length-1];
+  var sec = document.createElement('div');
+  sec.className = 'rps';
+  sec.id = 'rps-greenn';
+  var statusClass = (last.status==='paid'||last.status==='approved')?'ok':
+                    (last.status==='refused'||last.status==='declined'||last.status==='failed')?'err':
+                    (last.status==='abandoned')?'warn':'pending';
+  var recent = hist.slice(-5).reverse();
+  sec.innerHTML =
+    '<div class="rpt">HISTÓRICO GREENN</div>'+
+    '<div class="g-status g-'+statusClass+'">'+esc(last.statusLabel||last.status)+'</div>'+
+    '<div class="g-summary">'+
+      '<div><span class="g-lbl">Compras aprovadas</span><span class="g-val">'+aprovadas.length+'</span></div>'+
+      '<div><span class="g-lbl">Total gasto</span><span class="g-val">R$ '+totalGasto.toFixed(2).replace('.',',')+'</span></div>'+
+      '<div><span class="g-lbl">Eventos totais</span><span class="g-val">'+hist.length+'</span></div>'+
+    '</div>'+
+    '<div class="g-events">'+
+      recent.map(function(h){
+        var when = h.at ? new Date(h.at).toLocaleDateString('pt-BR',{day:'2-digit',month:'short'}) : '';
+        var val = (typeof h.total==='number'&&h.total>0) ? ('R$ '+h.total.toFixed(2).replace('.',',')) : '';
+        return '<div class="g-evt"><span class="g-evt-label '+esc(h.status||'')+'">'+esc(h.statusLabel||h.status||'?')+'</span>'+
+               '<span class="g-evt-prod">'+esc(h.productName||'-')+'</span>'+
+               '<span class="g-evt-meta">'+when+(val?' · '+val:'')+'</span></div>';
+      }).join('')+
+    '</div>'+
+    '<button class="g-btn" onclick="navTo(\'integ\')">Ver todos os eventos →</button>';
+  right.appendChild(sec);
 }
 
 function resolverConv(){
