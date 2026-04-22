@@ -63,6 +63,17 @@ body{background:var(--bg);color:var(--text);height:100vh;display:flex;overflow:h
 .pill.add{background:transparent;border:1px dashed var(--text2);color:var(--text2);padding:6px 10px;font-size:14px;line-height:1}
 .pill.add:hover{border-color:var(--gold);color:var(--gold);background:transparent}
 
+/* PINNED ROWS (Trancadas + Arquivadas) */
+#sb-pinned{flex-shrink:0;background:var(--sb)}
+.sb-pinrow{display:flex;align-items:center;gap:12px;padding:11px 14px;cursor:pointer;border-bottom:1px solid #1f1f1f;transition:background .12s;color:var(--text)}
+.sb-pinrow:hover{background:var(--panel2)}
+.sb-pinrow.active{background:var(--gold3)}
+.sb-pinrow.active .pi-ic, .sb-pinrow.active .pi-tx{color:var(--gold)}
+.sb-pinrow.active .pi-ic{background:transparent}
+.pi-ic{width:36px;height:36px;background:var(--panel2);border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--text2);flex-shrink:0}
+.pi-tx{flex:1;font-size:14px;font-weight:500}
+.pi-ct{font-size:11px;color:var(--gold);background:var(--gold3);padding:2px 9px;border-radius:10px;font-weight:700}
+
 /* CONV LIST */
 #cl{flex:1;overflow-y:auto}
 #cl::-webkit-scrollbar{width:4px}
@@ -230,6 +241,7 @@ body{background:var(--bg);color:var(--text);height:100vh;display:flex;overflow:h
       <input type="text" placeholder="Buscar conversa ou contato..." oninput="buscar(this.value)">
     </div>
   </div>
+  <div id="sb-pinned"></div>
   <div id="cl"></div>
 </div>
 
@@ -254,6 +266,8 @@ body{background:var(--bg);color:var(--text);height:100vh;display:flex;overflow:h
     <button class="actb res" onclick="resolverConv()"> Resolver</button>
     <button class="actb trf" onclick="openModal('mtrf')">â¡ Transferir</button>
     <button class="actb bot" id="btn-bot" onclick="toggleBot()">ð¤ Ativar Bot</button>
+    <button class="actb" onclick="arquivar()" style="margin-top:6px">📦 Arquivar / Desarquivar</button>
+    <button class="actb" onclick="trancar()">🔒 Trancar / Destrancar</button>
   </div>
   <div class="rps">
     <div class="rpt">TAGS <button onclick="addTag()">+ Add</button></div>
@@ -388,6 +402,37 @@ function showEmpty(){
   document.getElementById('main').innerHTML='<div id="es"><div class="es-logo">SP</div><h3>SPEAKERS CRM</h3><p>Selecione uma conversa ou crie uma nova</p></div>';
 }
 
+// === VIEWS: inbox / locked / archived (v4.2 estilo Waseller) ===
+var IMP_FLAGS_KEY="imp_flags_v1"; // {archived:[id,id,...], locked:[id,...]}
+var impFlags={archived:[],locked:[]};
+try{ impFlags=Object.assign({archived:[],locked:[]}, JSON.parse(localStorage.getItem(IMP_FLAGS_KEY)||'{}')); }catch(e){}
+function flagsSave(){ localStorage.setItem(IMP_FLAGS_KEY, JSON.stringify(impFlags)); }
+function isArchived(id){ return impFlags.archived.indexOf(id)!==-1; }
+function isLocked(id){ return impFlags.locked.indexOf(id)!==-1; }
+function _toggle(arr,id){ var i=arr.indexOf(id); if(i===-1) arr.push(id); else arr.splice(i,1); }
+function arquivar(id){ id=id||cur; if(!id)return; _toggle(impFlags.archived,id); flagsSave(); renderSB(); renderPinned(); if(typeof renderRP==='function'&&id===cur)renderRP(id); }
+function trancar(id){ id=id||cur; if(!id)return; _toggle(impFlags.locked,id); flagsSave(); renderSB(); renderPinned(); if(typeof renderRP==='function'&&id===cur)renderRP(id); }
+
+var curView='inbox';
+function setView(v){ curView=(curView===v)?'inbox':v; renderPinned(); renderSB(); }
+function renderPinned(){
+  var el=document.getElementById('sb-pinned'); if(!el) return;
+  var allConvs=window.convs?Object.values(window.convs):[];
+  var lockedCount=allConvs.filter(function(c){return isLocked(c.id);}).length;
+  var archivedCount=allConvs.filter(function(c){return isArchived(c.id);}).length;
+  el.innerHTML=
+    '<div class="sb-pinrow'+(curView==='locked'?' active':'')+'" onclick="setView(\'locked\')">'+
+      '<div class="pi-ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zM9 6c0-1.66 1.34-3 3-3s3 1.34 3 3v2H9V6z"/></svg></div>'+
+      '<div class="pi-tx">Conversas trancadas</div>'+
+      (lockedCount>0?'<div class="pi-ct">'+lockedCount+'</div>':'')+
+    '</div>'+
+    '<div class="sb-pinrow'+(curView==='archived'?' active':'')+'" onclick="setView(\'archived\')">'+
+      '<div class="pi-ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M20.54 5.23l-1.39-1.68C18.88 3.21 18.47 3 18 3H6c-.47 0-.88.21-1.16.55L3.46 5.23C3.17 5.57 3 6.02 3 6.5V19c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6.5c0-.48-.17-.93-.46-1.27zM12 17.5L6.5 12H10v-2h4v2h3.5L12 17.5zM5.12 5l.81-1h12l.94 1H5.12z"/></svg></div>'+
+      '<div class="pi-tx">Arquivadas</div>'+
+      (archivedCount>0?'<div class="pi-ct">'+archivedCount+'</div>':'')+
+    '</div>';
+}
+
 // === FILTROS PILL (v4.2 estilo Waseller) ===
 var IMP_PILLS_KEY="imp_pills_v1";
 var pillsBuiltIn=[
@@ -470,7 +515,13 @@ function renderSB(){
   cl.innerHTML='';
   var allPills=getAllPills();
   var p=allPills.find(function(x){return x.id===curPill;}) || allPills[0];
-  Object.values(convs).filter(p.match).forEach(function(c){
+  Object.values(convs).filter(function(c){
+    // view: locked/archived OU inbox (esconde locked+archived)
+    if(curView==='locked')   return isLocked(c.id);
+    if(curView==='archived') return isArchived(c.id);
+    if(isLocked(c.id) || isArchived(c.id)) return false;
+    return p.match(c);
+  }).forEach(function(c){
     var lm=c.msgs[c.msgs.length-1]||{t:'',ts:''};
     var d=document.createElement('div');
     d.className='ci'+(cur===c.id?' active':'');d.id='ci-'+c.id;
@@ -483,6 +534,7 @@ function renderSB(){
     cl.appendChild(d);
   });
   renderPills();
+  renderPinned();
 }
 // shims legados (v4.1 ainda chama setTab/setFilter de outros lugares)
 function setTab(t){ if(t==='all')setPill('all'); else if(t==='open')setPill('open'); else if(t==='resolved')setPill('resolved'); else setPill('all'); }
