@@ -480,6 +480,249 @@ app.get("/api/integrations/greenn/status", (req, res) => {
 });
 
 // ============================================================
+// INTEGRACAO KIWIFY (v4.20) - webhook + token + SSE
+// ============================================================
+const KIWIFY_FILE = process.env.KIWIFY_FILE || path.join(__dirname, "data", "kiwify-events.json");
+const KIWIFY_TOKEN = process.env.KIWIFY_TOKEN || ""; // token configurado ao criar webhook na Kiwify
+const KIWIFY_MAX_EVENTS = 200;
+const KIWIFY_RULES_FILE = process.env.KIWIFY_RULES_FILE || path.join(__dirname, "data", "kiwify-rules.json");
+
+function kiwifyLoad() { try { return JSON.parse(require("fs").readFileSync(KIWIFY_FILE, "utf8")); } catch { return []; } }
+function kiwifySave(arr) { try { require("fs").writeFileSync(KIWIFY_FILE, JSON.stringify(arr.slice(-KIWIFY_MAX_EVENTS), null, 2)); } catch (e) { console.error("[kiwify]", e?.message); } }
+
+function kiwifyMapStatus(event, orderStatus) {
+  const e = String(event || "").toLowerCase();
+  const s = String(orderStatus || "").toLowerCase();
+  if (e.includes("compra_aprovada") || e === "order_approved" || s === "paid" || s === "approved") return "paid";
+  if (e.includes("compra_recusada") || e === "order_refused" || s === "refused") return "refused";
+  if (e.includes("compra_reembolsada") || e === "order_refunded" || s === "refunded") return "refunded";
+  if (e === "chargeback" || s === "chargedback") return "chargedback";
+  if (e.includes("boleto_gerado") || e === "billet_generated" || e.includes("pix_gerado") || e === "pix_generated" || s === "waiting_payment") return "pending";
+  if (e.includes("carrinho_abandonado") || e === "cart_abandoned") return "abandoned";
+  if (e === "subscription_canceled" || s === "canceled") return "cancelled";
+  if (e === "subscription_late") return "expired";
+  if (e === "subscription_renewed") return "paid";
+  return "unknown";
+}
+
+function normalizeKiwifyPayload(raw) {
+  raw = raw || {};
+  const event = raw.webhook_event_type || raw.event || raw.event_type || "";
+  const orderStatus = raw.order_status || raw.status || "";
+  const Customer = raw.Customer || raw.customer || {};
+  const Product = raw.Product || raw.product || {};
+  const Commissions = raw.Commissions || raw.commissions || {};
+  const Subscription = raw.Subscription || raw.subscription || {};
+
+  const name = Customer.full_name || Customer.name || `${Customer.first_name || ""} ${Customer.last_name || ""}`.trim();
+  const email = Customer.email || "";
+  const phone = String(Customer.mobile || Customer.phone || Customer.cellphone || "").replace(/\D/g, "");
+
+  const productName = Product.product_name || Product.name || "";
+  const productId = Product.product_id || Product.id || "";
+
+  // Kiwify envia valores em centavos
+  const totalCents = Number(Commissions.charge_amount || Commissions.product_base_price || raw.total_value_cents || 0);
+  const total = totalCents > 0 ? Math.round(totalCents) / 100 : Number(raw.total || 0);
+  const currency = Commissions.currency_code || raw.currency || "BRL";
+
+  const transactionId = raw.order_id || raw.order_ref || "";
+  const paymentMethod = raw.payment_method || "";
+  const installments = raw.installments || null;
+  const boletoUrl = raw.boleto_URL || null;
+  const pixCode = raw.pix_code || null;
+
+  const status = kiwifyMapStatus(event, orderStatus);
+  return {
+    event: event || "unknown",
+    type: "kiwify",
+    status,
+    statusLabel: greennStatusLabel(status),
+    name, email, phone,
+    productName, productId,
+    total, currency,
+    transactionId,
+    paymentType: paymentMethod,
+    installments,
+    hasSubscription: !!Subscription.id,
+    subscriptionStatus: Subscription.status || null,
+    boletoUrl, pixCode,
+    receivedAt: Date.now(),
+    raw
+  };
+}
+
+function kiwifyVerifyAuth(req) {
+  if (!KIWIFY_TOKEN) return true; // sem token = modo aberto
+  // Kiwify envia token em query ?signature= ou como campo no body, ou header
+  const sent = req.query.signature || req.query.token ||
+               (req.body && (req.body.token || req.body.signature)) ||
+               req.headers["x-kiwify-signature"] || req.headers["x-kiwify-token"];
+  return sent && sent === KIWIFY_TOKEN;
+}
+
+const KIWIFY_RULES_DEFAULTS = [
+  { status: "paid",       delayMin: 1,  enabled: true,  message: "{nome}, pagamento aprovado na Kiwify! 🎉\n\nSeu acesso ao {produto} ({valor}) foi liberado. Link do curso chega no email em instantes.\n\nQualquer duvida, estou aqui." },
+  { status: "pending",    delayMin: 30, enabled: true,  message: "Oi {nome}! Seu boleto/pix do {produto} foi gerado ({valor}). Quando pagar, libera na hora. Pix eh o mais rapido ✨" },
+  { status: "abandoned",  delayMin: 15, enabled: true,  message: "{nome}, vi que voce comecou a compra do {produto} na Kiwify e parou. Posso te ajudar a finalizar? Ficou duvida no pagamento ou produto?" },
+  { status: "refused",    delayMin: 5,  enabled: true,  message: "{nome}, o pagamento do {produto} nao foi aprovado. Vamos tentar outro metodo? Pix, outro cartao ou boleto." },
+  { status: "expired",    delayMin: 5,  enabled: true,  message: "{nome}, seu boleto/pix do {produto} expirou. Quer que eu gere um novo? Pix cai em segundos." },
+  { status: "refunded",   delayMin: 1,  enabled: false, message: "{nome}, reembolso confirmado ({valor}). Chega na sua conta em ate 7 dias.\n\nSe mudar de ideia, me avisa!" }
+];
+function kiwifyRulesLoad() {
+  try { return JSON.parse(require("fs").readFileSync(KIWIFY_RULES_FILE, "utf8")); }
+  catch { require("fs").writeFileSync(KIWIFY_RULES_FILE, JSON.stringify(KIWIFY_RULES_DEFAULTS, null, 2)); return KIWIFY_RULES_DEFAULTS.slice(); }
+}
+function kiwifyRulesSave(arr) { try { require("fs").writeFileSync(KIWIFY_RULES_FILE, JSON.stringify(arr || [], null, 2)); } catch (e) { console.error("[kiwify rules]", e?.message); } }
+
+app.post("/api/webhook/kiwify", (req, res) => {
+  try {
+    if (!kiwifyVerifyAuth(req)) {
+      return res.status(401).json({ ok: false, error: "token invalido" });
+    }
+    const norm = normalizeKiwifyPayload(req.body);
+    const arr = kiwifyLoad();
+    arr.push(norm);
+    kiwifySave(arr);
+
+    let autoScheduledId = null;
+    try {
+      if (norm.phone) {
+        const rules = kiwifyRulesLoad();
+        const rule = rules.find(r => r.enabled && r.status === norm.status);
+        if (rule && rule.message) {
+          const expanded = expandGreennTemplate(rule.message, norm);
+          const sendAt = Date.now() + (Number(rule.delayMin) || 0) * 60 * 1000;
+          const schedArr = schedLoad();
+          const item = {
+            id: schedNewId(),
+            phone: norm.phone, message: expanded,
+            note: `[auto Kiwify: ${norm.statusLabel}]`,
+            sendAt, status: "pending", createdAt: Date.now(), sentAt: null, error: null,
+            source: "kiwify-auto",
+            sourceStatus: norm.status, sourceProduct: norm.productName, sourceTransaction: norm.transactionId
+          };
+          schedArr.push(item);
+          schedSave(schedArr);
+          autoScheduledId = item.id;
+          console.log(`[kiwify-auto] agendou ${item.id} (${norm.status})`);
+        }
+      }
+    } catch (e) { console.error("[kiwify-auto]", e?.message); }
+
+    broadcastSSE({
+      type: "kiwify_event",
+      data: {
+        event: norm.event, status: norm.status, statusLabel: norm.statusLabel,
+        name: norm.name, phone: norm.phone, email: norm.email,
+        productName: norm.productName, total: norm.total, currency: norm.currency,
+        transactionId: norm.transactionId, paymentType: norm.paymentType,
+        installments: norm.installments, boletoUrl: norm.boletoUrl, pixCode: norm.pixCode,
+        receivedAt: norm.receivedAt, autoScheduledId
+      }
+    });
+    res.json({ ok: true, normalized: { phone: norm.phone, name: norm.name, status: norm.status, event: norm.event }, autoScheduledId });
+  } catch (e) {
+    console.error("[kiwify webhook]", e?.message);
+    res.status(500).json({ ok: false, error: e?.message });
+  }
+});
+
+function kiwifyMetrics() {
+  const all = kiwifyLoad();
+  const now = Date.now(), day = 24 * 60 * 60 * 1000;
+  const startOfDay = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x.getTime(); };
+  const today = startOfDay(now), week = now - 7 * day, month = now - 30 * day;
+  const bucket = (filterFn) => {
+    const arr = all.filter(filterFn);
+    const paid = arr.filter(x => x.status === "paid");
+    const abandoned = arr.filter(x => x.status === "abandoned");
+    const refused = arr.filter(x => x.status === "refused");
+    const expired = arr.filter(x => x.status === "expired");
+    const refunded = arr.filter(x => x.status === "refunded" || x.status === "chargedback");
+    const revenue = paid.reduce((s, x) => s + (Number(x.total) || 0), 0);
+    return {
+      total: arr.length, paid: paid.length, abandoned: abandoned.length,
+      refused: refused.length, expired: expired.length, refunded: refunded.length,
+      revenue: Math.round(revenue * 100) / 100,
+      conversionPct: arr.length ? Math.round((paid.length / arr.length) * 1000) / 10 : 0,
+      avgTicket: paid.length ? Math.round((revenue / paid.length) * 100) / 100 : 0
+    };
+  };
+  const paidAll = all.filter(x => x.status === "paid" && x.productName);
+  const byProduct = {};
+  paidAll.forEach(x => {
+    if (!byProduct[x.productName]) byProduct[x.productName] = { count: 0, revenue: 0 };
+    byProduct[x.productName].count++;
+    byProduct[x.productName].revenue += Number(x.total) || 0;
+  });
+  const topProducts = Object.keys(byProduct)
+    .map(name => ({ name, count: byProduct[name].count, revenue: Math.round(byProduct[name].revenue * 100) / 100 }))
+    .sort((a, b) => b.revenue - a.revenue).slice(0, 5);
+  const days7 = [];
+  for (let i = 6; i >= 0; i--) {
+    const dStart = startOfDay(now - i * day), dEnd = dStart + day;
+    const dayPaid = all.filter(x => x.receivedAt >= dStart && x.receivedAt < dEnd && x.status === "paid");
+    days7.push({ date: new Date(dStart).toISOString().slice(0, 10), vendas: dayPaid.length, receita: Math.round(dayPaid.reduce((s, x) => s + (Number(x.total) || 0), 0) * 100) / 100 });
+  }
+  return { totalEventos: all.length, hoje: bucket(x => x.receivedAt >= today), ultimos7: bucket(x => x.receivedAt >= week), ultimos30: bucket(x => x.receivedAt >= month), topProducts, days7 };
+}
+
+function kiwifyFilterEvents(events, q) {
+  q = q || {};
+  const search = String(q.search || '').toLowerCase().trim();
+  const status = String(q.status || '').toLowerCase().trim();
+  const product = String(q.product || '').toLowerCase().trim();
+  return events.filter(ev => {
+    if (status && ev.status !== status) return false;
+    if (product && !String(ev.productName || '').toLowerCase().includes(product)) return false;
+    if (search) {
+      const hay = [ev.name, ev.phone, ev.email, ev.productName, ev.statusLabel, ev.transactionId, ev.status, ev.event].join(' ').toLowerCase();
+      if (!hay.includes(search)) return false;
+    }
+    return true;
+  });
+}
+
+app.get("/api/integrations/kiwify/events", (req, res) => {
+  const arr = kiwifyLoad();
+  const filtered = kiwifyFilterEvents(arr, req.query);
+  const limit = Math.min(Number(req.query.limit) || 50, 500);
+  res.json({ ok: true, total: arr.length, count: filtered.length, items: filtered.slice(-limit).reverse() });
+});
+app.get("/api/integrations/kiwify/events.csv", (req, res) => {
+  const arr = kiwifyLoad();
+  const filtered = kiwifyFilterEvents(arr, req.query).slice().reverse();
+  const esc = v => { if (v === null || v === undefined) return ''; const s = String(v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  const cols = ['receivedAt', 'event', 'status', 'statusLabel', 'name', 'phone', 'email', 'productName', 'total', 'currency', 'transactionId', 'paymentType', 'installments'];
+  const lines = [cols.join(',')];
+  filtered.forEach(ev => {
+    const iso = ev.receivedAt ? new Date(ev.receivedAt).toISOString() : '';
+    lines.push([iso, esc(ev.event), esc(ev.status), esc(ev.statusLabel), esc(ev.name), esc(ev.phone), esc(ev.email), esc(ev.productName), esc(ev.total), esc(ev.currency), esc(ev.transactionId), esc(ev.paymentType), esc(ev.installments)].join(','));
+  });
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="kiwify-events-${new Date().toISOString().slice(0, 10)}.csv"`);
+  res.send('\uFEFF' + lines.join('\n'));
+});
+app.get("/api/integrations/kiwify/status", (req, res) => {
+  res.json({
+    ok: true, enabled: true,
+    tokenConfigured: !!KIWIFY_TOKEN,
+    webhookUrl: `${req.protocol}://${req.get("host")}/api/webhook/kiwify`,
+    eventsCount: kiwifyLoad().length, storageFile: KIWIFY_FILE
+  });
+});
+app.get("/api/integrations/kiwify/metrics", (req, res) => { res.json({ ok: true, metrics: kiwifyMetrics() }); });
+app.get("/api/integrations/kiwify/rules", (req, res) => { res.json({ ok: true, rules: kiwifyRulesLoad() }); });
+app.put("/api/integrations/kiwify/rules", (req, res) => {
+  const arr = Array.isArray(req.body) ? req.body : req.body?.rules;
+  if (!Array.isArray(arr)) return res.status(400).json({ ok: false, error: "body deve ser array" });
+  const clean = arr.map(r => ({ status: String(r.status || '').toLowerCase(), delayMin: Math.max(0, Math.min(60 * 24, Number(r.delayMin) || 0)), enabled: !!r.enabled, message: String(r.message || '') })).filter(r => r.status && r.message);
+  kiwifyRulesSave(clean);
+  res.json({ ok: true, rules: clean });
+});
+
+// ============================================================
 // INTEGRACAO HOTMART (v4.19) - webhook v2 + hottok/HMAC + SSE
 // ============================================================
 const HOTMART_FILE = process.env.HOTMART_FILE || path.join(__dirname, "data", "hotmart-events.json");

@@ -659,7 +659,11 @@ var QRS_DEFAULTS=[
   {n:'Hotmart-BoasVindas', t:'{nome}, matricula aprovada! 🔥\n\nSeu acesso ao {produto} ({valor}) ja esta liberado na Hotmart. Pode entrar pelo app ou pelo site.\n\nQualquer duvida, me chama por aqui. Bora? ✨'},
   {n:'Hotmart-Boleto',     t:'Oi {nome}! Seu boleto do {produto} ({valor}) foi gerado. Quando pagar, o acesso libera automatico. Se preferir Pix (cai na hora), me chama.'},
   {n:'Hotmart-Abandono',   t:'{nome}, vi que voce comecou o checkout do {produto} na Hotmart e nao finalizou. Ficou alguma duvida? Posso te ajudar com o pagamento ou esclarecer qualquer coisa sobre o curso.'},
-  {n:'Hotmart-Recusada',   t:'{nome}, o pagamento do {produto} nao foi aprovado ({statusLabel}). Vamos tentar outro metodo? Pix cai na hora, ou posso gerar novo boleto. Me chama!'}
+  {n:'Hotmart-Recusada',   t:'{nome}, o pagamento do {produto} nao foi aprovado ({statusLabel}). Vamos tentar outro metodo? Pix cai na hora, ou posso gerar novo boleto. Me chama!'},
+  {n:'Kiwify-BoasVindas', t:'{nome}, compra aprovada! 🥝\n\nSeu acesso ao {produto} ({valor}) foi liberado na Kiwify. Link do curso chega no email em instantes.\n\nQualquer duvida, estou aqui por aqui mesmo. Bora? ✨'},
+  {n:'Kiwify-Boleto',     t:'Oi {nome}! Seu {produto} foi separado. Boleto/pix gerado - quando pagar, o acesso libera sozinho. Pix cai em segundos se preferir.'},
+  {n:'Kiwify-Abandono',   t:'{nome}, vi que voce comecou a compra do {produto} na Kiwify e nao finalizou. Ficou com alguma duvida? Posso te ajudar - tem Pix, cartao ou boleto.'},
+  {n:'Kiwify-Recusada',   t:'{nome}, o pagamento do {produto} nao foi aprovado ({statusLabel}). Quer tentar outro cartao ou um Pix?'}
 ];
 function loadTemplates(){
   try{
@@ -1453,6 +1457,73 @@ function hotmartCsvUrl(){
   return '/api/integrations/hotmart/events.csv'+(qs.length?'?'+qs.join('&'):'');
 }
 
+// === KIWIFY (v4.20) ===
+function handleKiwifyEvent(ev){
+  try{
+    if(!ev) return;
+    var conv = greennMatchOrCreateConv(ev);
+    if(!conv) return;
+    conv.dept = 'Kiwify';
+    var tag = greennAutoTag(ev.status);
+    if(tag) conv.tag = tag;
+    var emoji = ({paid:'✅',refused:'❌',refunded:'↩️',chargedback:'⚠️',abandoned:'🛒',expired:'⏰',pending:'⏳',cancelled:'🚫'})[String(ev.status||'').toLowerCase()] || 'ℹ️';
+    var valor = ev.total ? ' R$ '+Number(ev.total).toFixed(2).replace('.',',') : '';
+    var extra = ev.installments ? ' ('+ev.installments+'x)' : '';
+    var noteText = emoji+' Kiwify: '+(ev.statusLabel||ev.status)+(ev.productName?' — '+ev.productName:'')+valor+extra;
+    conv.msgs.push({r:'note', t:noteText, ts:new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})});
+    if(!Array.isArray(conv.greennHistory)) conv.greennHistory = [];
+    conv.greennHistory.push({ status: ev.status, statusLabel: ev.statusLabel, productName: ev.productName, total: ev.total, currency: ev.currency, transactionId: ev.transactionId, at: ev.receivedAt || Date.now(), source: 'kiwify', event: ev.event });
+    if(conv.greennHistory.length > 20) conv.greennHistory = conv.greennHistory.slice(-20);
+    conv.greennLast = conv.greennHistory[conv.greennHistory.length-1];
+    if(typeof renderSB==='function') renderSB();
+    if(window.cur === conv.id){
+      if(typeof renderMsgs==='function') renderMsgs(conv.id);
+      if(typeof renderRP==='function') renderRP(conv.id);
+    }
+    if(typeof toast==='function') toast(emoji+' '+ev.name+': '+ev.statusLabel+(valor?valor:''));
+    if(typeof playBeep==='function' && ev.status==='paid') playBeep();
+    if(typeof showNotif==='function') showNotif('Kiwify — '+ev.statusLabel, ev.name+(valor?valor:''));
+  }catch(e){ console.warn('[kiwify] handleEvent err', e); }
+}
+async function fetchKiwifyStatus(){ try{ var r=await fetch('/api/integrations/kiwify/status'); return await r.json(); }catch(e){ return null; } }
+async function fetchKiwifyEvents(limit, q){
+  try{
+    var qs='limit='+(limit||50);
+    if(q){ if(q.status)qs+='&status='+encodeURIComponent(q.status); if(q.product)qs+='&product='+encodeURIComponent(q.product); if(q.search)qs+='&search='+encodeURIComponent(q.search); }
+    var r=await fetch('/api/integrations/kiwify/events?'+qs);
+    var d=await r.json();
+    return { items: d.items||[], total: d.total||0, count: d.count||0 };
+  }catch(e){ return { items:[], total:0, count:0 }; }
+}
+async function fetchKiwifyRules(){ try{ var r=await fetch('/api/integrations/kiwify/rules'); var d=await r.json(); return d.rules||[]; }catch(e){ return []; } }
+async function kiwifyRulesPut(rules){ var r=await fetch('/api/integrations/kiwify/rules',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(rules)}); return r.json(); }
+var _kiwifyRulesCache = [];
+function kiwifyRuleToggle(status){
+  _kiwifyRulesCache.forEach(function(r){ if(r.status===status) r.enabled=!r.enabled; });
+  kiwifyRulesPut(_kiwifyRulesCache).then(function(d){ if(d.ok){ if(typeof toast==='function') toast('Regra Kiwify salva'); renderIntegracoesPage(document.getElementById('main')); } });
+}
+function kiwifyRuleToggleBody(status){ var el=document.getElementById('krb-'+status); if(el) el.classList.toggle('open'); }
+function kiwifyRuleSaveFields(status){
+  var delay=Number(document.getElementById('krdel-'+status).value)||0;
+  var msg=document.getElementById('krmsg-'+status).value;
+  _kiwifyRulesCache.forEach(function(r){ if(r.status===status){ r.delayMin=delay; r.message=msg; } });
+  kiwifyRulesPut(_kiwifyRulesCache).then(function(d){ if(d.ok){ if(typeof toast==='function') toast('Regra atualizada'); } });
+}
+var _kiwifyFilters = { status:'', product:'', search:'' };
+function kiwifyFilterChange(field, value){
+  _kiwifyFilters[field]=value;
+  clearTimeout(window._kiwifyFilterTimer);
+  window._kiwifyFilterTimer = setTimeout(function(){ renderIntegracoesPage(document.getElementById('main')); }, field==='status'?0:300);
+}
+function kiwifyFiltersClear(){ _kiwifyFilters = { status:'', product:'', search:'' }; renderIntegracoesPage(document.getElementById('main')); }
+function kiwifyCsvUrl(){
+  var qs=[];
+  if(_kiwifyFilters.status) qs.push('status='+encodeURIComponent(_kiwifyFilters.status));
+  if(_kiwifyFilters.product) qs.push('product='+encodeURIComponent(_kiwifyFilters.product));
+  if(_kiwifyFilters.search) qs.push('search='+encodeURIComponent(_kiwifyFilters.search));
+  return '/api/integrations/kiwify/events.csv'+(qs.length?'?'+qs.join('&'):'');
+}
+
 function eduzzCsvUrl(){
   var qs=[];
   if(_eduzzFilters.status) qs.push('status='+encodeURIComponent(_eduzzFilters.status));
@@ -1538,6 +1609,7 @@ async function renderIntegracoesPage(main){
   var greennSt = await fetchGreennStatus();
   var eduzzSt = await fetchEduzzStatus();
   var hotmartSt = await fetchHotmartStatus();
+  var kiwifySt = await fetchKiwifyStatus();
 
   var header = '<div class="int-page">'+
     '<h2>🔌 Integrações</h2>'+
@@ -1552,7 +1624,83 @@ async function renderIntegracoesPage(main){
       '<button class="plt-tab '+(platform==='hotmart'?'active':'')+'" onclick="intPlatformSet(\'hotmart\')">'+
         '🔥 Hotmart <span class="plt-count">'+((hotmartSt&&hotmartSt.eventsCount)||0)+'</span>'+
       '</button>'+
+      '<button class="plt-tab '+(platform==='kiwify'?'active':'')+'" onclick="intPlatformSet(\'kiwify\')">'+
+        '🥝 Kiwify <span class="plt-count">'+((kiwifySt&&kiwifySt.eventsCount)||0)+'</span>'+
+      '</button>'+
     '</div>';
+
+  if(platform === 'kiwify'){
+    var _kg = await fetchKiwifyEvents(100, _kiwifyFilters);
+    var events = _kg.items; var totalAll = _kg.total;
+    _kiwifyRulesCache = await fetchKiwifyRules();
+    var rulesHtml = _kiwifyRulesCache.map(function(r){
+      var lblMap = {paid:'Aprovada',pending:'Boleto/Pix gerado',refused:'Recusada',abandoned:'Abandonou carrinho',refunded:'Reembolsada',chargedback:'Chargeback',expired:'Expirado',cancelled:'Cancelada'};
+      var lbl = lblMap[r.status] || r.status;
+      return '<div class="rule-row">'+
+        '<div class="rule-head" onclick="kiwifyRuleToggleBody(\''+esc(r.status)+'\')">'+
+          '<span class="rule-stt '+esc(r.status)+'">'+esc(lbl)+'</span>'+
+          '<div class="rule-info"><div class="rn">Quando status = '+esc(r.status)+'</div><div class="rd">Agenda em '+(r.delayMin||0)+' min &middot; '+(r.enabled?'ativo':'desativado')+'</div></div>'+
+          '<div class="rule-toggle '+(r.enabled?'on':'')+'" onclick="event.stopPropagation();kiwifyRuleToggle(\''+esc(r.status)+'\')"></div>'+
+        '</div>'+
+        '<div class="rule-body" id="krb-'+esc(r.status)+'">'+
+          '<label style="font-size:11px;color:var(--text2)">Atraso (minutos):</label> '+
+          '<input type="number" id="krdel-'+esc(r.status)+'" value="'+Number(r.delayMin||0)+'" min="0" max="1440">'+
+          '<textarea id="krmsg-'+esc(r.status)+'">'+esc(r.message||'')+'</textarea>'+
+          '<div class="rule-actions"><button class="primary" onclick="kiwifyRuleSaveFields(\''+esc(r.status)+'\')">Salvar</button></div>'+
+        '</div>'+
+      '</div>';
+    }).join('');
+
+    var authStatus = (kiwifySt && kiwifySt.tokenConfigured)
+      ? '<span style="color:#10b981">✓ Token configurado (env KIWIFY_TOKEN) - validado via ?signature= ou header</span>'
+      : '<span style="color:#f59e0b">⚠ Sem token (modo aberto). Configure KIWIFY_TOKEN no servidor e cole o mesmo valor ao criar o webhook no painel Kiwify.</span>';
+
+    header += '<div class="int-card" style="border-left:4px solid #84cc16">'+
+      '<h3>🥝 Kiwify <span class="int-badge">Ativa</span></h3>'+
+      '<div class="int-sub" style="margin-bottom:14px">Plataforma brasileira de cursos digitais. Configure em <strong>dashboard.kiwify.com.br</strong> &gt; Apps &gt; Webhooks &gt; Criar webhook. O campo Token pode ser qualquer string; use o mesmo valor em KIWIFY_TOKEN.</div>'+
+      '<div class="int-row"><strong>Webhook URL:</strong><div class="int-url" id="kiwify-url">'+esc((kiwifySt&&kiwifySt.webhookUrl)||location.origin+'/api/webhook/kiwify')+'</div><button class="int-cp" onclick="navigator.clipboard.writeText(document.getElementById(\'kiwify-url\').textContent).then(function(){toast(\'URL copiada\')})">Copiar</button></div>'+
+      '<div class="int-row"><strong>Autenticacao:</strong>&nbsp;'+authStatus+'</div>'+
+      '<div class="int-row"><strong>Eventos recebidos:</strong>&nbsp;'+((kiwifySt&&kiwifySt.eventsCount)||0)+'</div>'+
+      '<div class="int-row" style="margin-top:10px;padding:10px;background:var(--panel2);border-radius:6px;font-size:11px;color:var(--text2)"><strong>Eventos Kiwify:</strong> compra_aprovada, compra_recusada, compra_reembolsada, boleto_gerado, pix_gerado, carrinho_abandonado, chargeback, subscription_canceled, subscription_late, subscription_renewed. Valores da Kiwify vem em centavos (normalizados para reais automaticamente).</div>'+
+    '</div>'+
+    '<div class="int-card">'+
+      '<h3>Regras de auto-follow-up (Kiwify) <span class="int-badge">backend</span></h3>'+
+      '<div class="int-sub" style="margin-bottom:12px">Independente das outras plataformas. Use {nome}, {produto}, {valor}, {statusLabel}.</div>'+
+      '<div class="rules-list">'+rulesHtml+'</div>'+
+    '</div>'+
+    '<div class="int-events">'+
+      '<h3>Eventos '+(totalAll?'('+events.length+' / '+totalAll+' total)':'('+events.length+')')+'</h3>'+
+      '<div class="int-filters">'+
+        '<select onchange="kiwifyFilterChange(\'status\', this.value)">'+
+          '<option value="">Todos status</option>'+
+          ['paid','refused','abandoned','refunded','chargedback','expired','cancelled','pending'].map(function(s){
+            return '<option value="'+s+'"'+(_kiwifyFilters.status===s?' selected':'')+'>'+esc(s)+'</option>';
+          }).join('')+
+        '</select>'+
+        '<input type="text" placeholder="Filtrar produto..." value="'+esc(_kiwifyFilters.product)+'" oninput="kiwifyFilterChange(\'product\', this.value)">'+
+        '<input type="text" placeholder="Buscar..." value="'+esc(_kiwifyFilters.search)+'" oninput="kiwifyFilterChange(\'search\', this.value)">'+
+        (_kiwifyFilters.status||_kiwifyFilters.product||_kiwifyFilters.search ? '<button onclick="kiwifyFiltersClear()" style="background:var(--panel2);color:var(--text);border:none;border-radius:6px;padding:7px 12px;cursor:pointer;font-size:12px">Limpar</button>' : '')+
+        '<a class="int-csv" href="'+kiwifyCsvUrl()+'" download>📥 Exportar CSV</a>'+
+      '</div>';
+    if(events.length===0){
+      header += '<div style="color:var(--text2);text-align:center;padding:24px;font-style:italic">Nenhum evento ainda.</div>';
+    } else {
+      events.forEach(function(ev){
+        var when = new Date(ev.receivedAt).toLocaleString('pt-BR');
+        var valor = ev.total ? ' &middot; <span class="int-evt-val">R$ '+Number(ev.total).toFixed(2)+'</span>' : '';
+        var pay = ev.paymentType ? ' &middot; '+esc(ev.paymentType) : '';
+        var inst = ev.installments ? ' '+ev.installments+'x' : '';
+        header += '<div class="int-evt">'+
+          '<span class="int-evt-status '+esc(ev.status||'unknown')+'">'+esc(ev.statusLabel||ev.status||'?')+'</span>'+
+          '<div class="int-evt-info"><div class="int-evt-name">'+esc(ev.name||ev.email||ev.phone||'(sem nome)')+(ev.productName?' &middot; '+esc(ev.productName):'')+'</div>'+
+          '<div class="int-evt-meta">'+when+(ev.phone?' &middot; '+esc(ev.phone):'')+valor+pay+inst+'</div></div>'+
+        '</div>';
+      });
+    }
+    header += '</div></div>';
+    main.style.cssText = ''; main.innerHTML = header;
+    return;
+  }
 
   if(platform === 'hotmart'){
     var _hg = await fetchHotmartEvents(100, _hotmartFilters);
@@ -2475,6 +2623,35 @@ async function renderReports(main){
     }
   }catch(e){}
 
+  // v4.20: Secao Kiwify no dashboard (verde-limao)
+  try{
+    var kgr = await fetch('/api/integrations/kiwify/metrics'); var kgj = await kgr.json();
+    var km = kgj.metrics;
+    if(km && km.totalEventos > 0){
+      html += '<div class="dash-section" style="border-color:#84cc16;border-width:1px">'+
+        '<h3 style="color:#a3e635">🥝 Vendas Kiwify</h3>'+
+        '<div class="dash-grid" style="margin-bottom:14px">'+
+          '<div class="dash-card"><div class="dc-lbl">Receita hoje</div><div class="dc-val" style="color:#10b981">'+fmtBRL(km.hoje.revenue)+'</div><div class="dc-hint">'+km.hoje.paid+' aprovadas</div></div>'+
+          '<div class="dash-card"><div class="dc-lbl">Receita 7 dias</div><div class="dc-val" style="color:#10b981">'+fmtBRL(km.ultimos7.revenue)+'</div><div class="dc-hint">'+km.ultimos7.paid+' aprovadas · ticket '+fmtBRL(km.ultimos7.avgTicket)+'</div></div>'+
+          '<div class="dash-card"><div class="dc-lbl">Receita 30 dias</div><div class="dc-val" style="color:#10b981">'+fmtBRL(km.ultimos30.revenue)+'</div><div class="dc-hint">'+km.ultimos30.paid+' aprovadas</div></div>'+
+          '<div class="dash-card"><div class="dc-lbl">Conversao 30d</div><div class="dc-val">'+(km.ultimos30.conversionPct||0)+'<span style="font-size:14px;color:var(--text2)"> %</span></div><div class="dc-hint">aprovadas / total</div></div>'+
+          '<div class="dash-card accent-red"><div class="dc-lbl">Abandonadas</div><div class="dc-val">'+km.ultimos7.abandoned+'</div><div class="dc-hint">ultimos 7 dias</div></div>'+
+          '<div class="dash-card"><div class="dc-lbl">Pagto pendente</div><div class="dc-val" style="color:#f59e0b">'+km.ultimos7.expired+'</div><div class="dc-hint">expirados</div></div>'+
+        '</div>';
+      if(km.topProducts && km.topProducts.length){
+        html += '<h3 style="margin-bottom:10px">Top produtos Kiwify (30d)</h3>';
+        var topMax4 = Math.max.apply(Math, [1].concat(km.topProducts.map(function(p){return p.revenue;})));
+        km.topProducts.forEach(function(p){
+          var pct4 = topMax4>0 ? Math.round(p.revenue/topMax4*100) : 0;
+          html += '<div class="dash-bar"><div class="dash-bar-lbl" style="width:180px">'+esc(p.name)+'</div>'+
+                  '<div class="dash-bar-fill"><div style="width:'+pct4+'%;background:#84cc16"></div></div>'+
+                  '<div class="dash-bar-num" style="min-width:90px">'+fmtBRL(p.revenue)+' ('+p.count+')</div></div>';
+        });
+      }
+      html += '</div>';
+    }
+  }catch(e){}
+
   // v4.18: Secao Eduzz no dashboard
   try{
     var egr = await fetch('/api/integrations/eduzz/metrics'); var egj = await egr.json();
@@ -2726,6 +2903,7 @@ setTimeout(checkStatus,2000);
         if(evt.type === "greenn_event"){ if(typeof handleGreennEvent==='function') handleGreennEvent(evt.data); return; }
         if(evt.type === "eduzz_event"){ if(typeof handleEduzzEvent==='function') handleEduzzEvent(evt.data); return; }
         if(evt.type === "hotmart_event"){ if(typeof handleHotmartEvent==='function') handleHotmartEvent(evt.data); return; }
+        if(evt.type === "kiwify_event"){ if(typeof handleKiwifyEvent==='function') handleKiwifyEvent(evt.data); return; }
         if(evt.type === "message_in"){ handleRealRow(evt.data, false); return; }
         if(evt.type === "message_out"){ handleRealRow(evt.data, true); return; }
         // fallback legado: backend antigo emitia sempre "new_message" com payload embrulhado

@@ -547,6 +547,100 @@ async function run(){
     expect(html.includes("'Hotmart-Recusada'"), "Hotmart: template Recusada");
     expect(html.includes("🔥 Vendas Hotmart"), "Dashboard: secao Hotmart");
     expect(html.includes("#ef5f1e"), "Hotmart: cor laranja do branding");
+    // v4.20 Kiwify frontend
+    expect(html.includes("function handleKiwifyEvent"), "Kiwify: handler SSE");
+    expect(html.includes("kiwify_event"), "Kiwify: escuta kiwify_event");
+    expect(html.includes("🥝 Kiwify"), "Kiwify: aba na UI");
+    expect(html.includes("fetchKiwifyRules"), "Kiwify: fetch rules");
+    expect(html.includes("'Kiwify-BoasVindas'"), "Kiwify: template BoasVindas");
+    expect(html.includes("'Kiwify-Boleto'"), "Kiwify: template Boleto");
+    expect(html.includes("🥝 Vendas Kiwify"), "Dashboard: secao Kiwify");
+    expect(html.includes("#84cc16"), "Kiwify: cor verde-limao");
+  }
+
+  console.log("\n== Teste: Kiwify webhook (v4.20) ==");
+  {
+    const base = `http://127.0.0.1:${CRM_PORT}`;
+    // Status
+    const r0 = await fetch(`${base}/api/integrations/kiwify/status`);
+    const j0 = await r0.json();
+    expect(j0.ok && j0.webhookUrl.endsWith('/api/webhook/kiwify'), "status + URL");
+
+    // Payload Kiwify real - compra_aprovada com valores em centavos
+    const payload = {
+      order_id: "k-ord-001",
+      order_ref: "REF-001",
+      order_status: "paid",
+      webhook_event_type: "compra_aprovada",
+      payment_method: "credit_card",
+      installments: 6,
+      card_last_digits: "1234",
+      Customer: {
+        full_name: "Felipe Kiwi",
+        first_name: "Felipe",
+        email: "felipe@test.com",
+        mobile: "11966667777",
+        CPF: "000.000.000-00"
+      },
+      Product: { product_id: "prod_k1", product_name: "Curso Kiwify X" },
+      Commissions: {
+        charge_amount: 49700, // R$ 497,00 em centavos
+        product_base_price: 49700,
+        currency_code: "BRL"
+      }
+    };
+    const r1 = await fetch(`${base}/api/webhook/kiwify`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const j1 = await r1.json();
+    expect(j1.ok === true, "webhook aceitou");
+    expect(j1.normalized.phone === '11966667777', "phone de Customer.mobile");
+    expect(j1.normalized.name === 'Felipe Kiwi', "name de full_name");
+    expect(j1.normalized.status === 'paid', "compra_aprovada -> paid");
+    expect(typeof j1.autoScheduledId === 'string', "auto-schedule");
+
+    // Valor convertido de centavos pra reais
+    const rlist = await fetch(`${base}/api/integrations/kiwify/events?limit=1`);
+    const jlist = await rlist.json();
+    expect(jlist.items[0].total === 497, "total convertido de centavos pra reais (49700 -> 497)");
+    expect(jlist.items[0].type === 'kiwify', "type=kiwify");
+    expect(jlist.items[0].paymentType === 'credit_card', "paymentType preservado");
+    expect(jlist.items[0].installments === 6, "installments preservado");
+
+    // Teste de mapeamento de eventos Kiwify
+    for (const [event, expectedStatus] of [
+      ['compra_recusada', 'refused'],
+      ['compra_reembolsada', 'refunded'],
+      ['boleto_gerado', 'pending'],
+      ['pix_gerado', 'pending'],
+      ['carrinho_abandonado', 'abandoned'],
+      ['chargeback', 'chargedback'],
+      ['subscription_canceled', 'cancelled'],
+      ['subscription_renewed', 'paid']
+    ]) {
+      const r = await fetch(`${base}/api/webhook/kiwify`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ webhook_event_type: event, Customer: { full_name: 'X', mobile: '11900000002' }, Product: { product_name: 'P' } })
+      });
+      const j = await r.json();
+      expect(j.normalized.status === expectedStatus, `${event} -> ${expectedStatus}`);
+    }
+
+    // Metrics
+    const rm = await fetch(`${base}/api/integrations/kiwify/metrics`);
+    const jm = await rm.json();
+    expect(jm.ok && jm.metrics.hoje.paid >= 2, "metrics paid");
+    expect(jm.metrics.hoje.revenue >= 497, "metrics soma receita");
+
+    // CSV
+    const rc = await fetch(`${base}/api/integrations/kiwify/events.csv`);
+    expect(rc.status === 200, "CSV 200");
+
+    // Rules
+    const rr = await fetch(`${base}/api/integrations/kiwify/rules`);
+    const jr = await rr.json();
+    expect(jr.rules.length >= 5, "5+ regras default Kiwify");
   }
 
   console.log("\n== Teste: Hotmart webhook v2 (v4.19) ==");
