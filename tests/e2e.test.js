@@ -303,6 +303,14 @@ async function run(){
     expect(html.includes("function tagSetColor"), "Tags: setColor");
     expect(html.includes("TAGS_DEFAULTS"), "Tags: defaults");
     expect(html.includes("IMP_TAGS_KEY"), "Tags: localStorage key");
+    // Lixeira v4.7
+    expect(html.includes("function renderTrashPage"), "Lixeira: render");
+    expect(html.includes("trashPurgeOld"), "Lixeira: auto-purge");
+    expect(html.includes("function trashMove"), "Lixeira: move pra lixeira");
+    expect(html.includes("function trashRestore"), "Lixeira: restaurar");
+    expect(html.includes("function trashEmpty"), "Lixeira: esvaziar");
+    expect(html.includes("TRASH_TTL_DAYS"), "Lixeira: TTL configuravel");
+    expect(html.includes("IMP_TRASH_KEY"), "Lixeira: localStorage");
   }
 
   console.log("\n== Teste: GET / serve welcome.html ==");

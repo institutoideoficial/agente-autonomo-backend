@@ -190,6 +190,26 @@ body{background:var(--bg);color:var(--text);height:100vh;display:flex;overflow:h
 .tag-form input[type=color]{width:48px;height:38px;border:1px solid var(--border);border-radius:6px;background:transparent;cursor:pointer}
 .tag-form button{background:var(--gold);color:#111;border:none;border-radius:6px;padding:9px 18px;cursor:pointer;font-weight:700;font-size:13px}
 
+/* TRASH PAGE (v4.7) */
+.trash-page{padding:24px;overflow-y:auto;height:100%;background:var(--bg)}
+.trash-page h2{font-size:22px;margin-bottom:6px;display:flex;align-items:center;gap:10px}
+.trash-sub{color:var(--text2);font-size:13px;margin-bottom:14px}
+.trash-actions{margin-bottom:14px;display:flex;gap:8px}
+.trash-actions button{background:var(--panel2);color:var(--text);border:none;border-radius:6px;padding:9px 14px;font-size:12px;cursor:pointer}
+.trash-actions button.danger{background:#3a1a1a;color:#ef4444}
+.trash-actions button.danger:hover{background:#5a2a2a}
+.trash-list{display:flex;flex-direction:column;gap:8px}
+.trash-row{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:13px;display:flex;align-items:center;gap:12px}
+.trash-av{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:#fff;flex-shrink:0}
+.trash-info{flex:1;min-width:0}
+.trash-info .nm{font-weight:600;font-size:14px;color:var(--text)}
+.trash-info .meta{font-size:11px;color:var(--text2);margin-top:3px}
+.trash-info .preview{font-size:12px;color:var(--text2);margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.trash-act button{background:var(--panel2);color:var(--text);border:none;border-radius:6px;padding:7px 12px;font-size:12px;cursor:pointer;margin-left:5px}
+.trash-act button:hover{background:var(--gold3);color:var(--gold)}
+.trash-act button.del:hover{background:#3a1a1a;color:#ef4444}
+.trash-empty{color:var(--text2);text-align:center;padding:40px;font-style:italic}
+
 /* CONV LIST */
 #cl{flex:1;overflow-y:auto}
 #cl::-webkit-scrollbar{width:4px}
@@ -558,6 +578,7 @@ function navTo(sec){
   else if(sec==='config') renderConfig(main);
   else if(sec==='templates') renderTemplatesPage(main);
   else if(sec==='tags') renderTagsPage(main);
+  else if(sec==='lixeira') renderTrashPage(main);
   else if(PLACEHOLDERS[sec]) renderPlaceholder(main, sec);
 }
 
@@ -658,12 +679,7 @@ var PLACEHOLDERS={
     desc:'Conecte o CRM com outras ferramentas. Hoje conecta com Bravos (motor WhatsApp) e Anthropic (bot opcional).',
     features:['Webhook generico (URL custom)','Google Calendar','Stripe / Mercado Pago','Hotmart / Eduzz (alunos)','Zapier / Make']
   },
-  lixeira: {
-    icon:'<svg width="34" height="34" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>',
-    title:'Lixeira',
-    desc:'Conversas removidas ficam aqui por 30 dias antes da exclusao definitiva.',
-    features:['Restaurar conversa removida','Esvaziar lixeira manualmente','Exclusao automatica em 30 dias']
-  },
+  
   notif: {
     icon:'<svg width="34" height="34" viewBox="0 0 24 24" fill="currentColor"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>',
     title:'Notificacoes',
@@ -875,6 +891,107 @@ function tagRemove(i){
   renderTagsPage(document.getElementById('main'));
   if(typeof renderSB==='function') renderSB();
 }
+
+// === LIXEIRA com TTL 30 dias (v4.7) ===
+var IMP_TRASH_KEY="imp_trash_v1";
+var TRASH_TTL_DAYS = 30;
+function loadTrash(){
+  try{
+    var raw=localStorage.getItem(IMP_TRASH_KEY);
+    if(!raw) return {};
+    var obj=JSON.parse(raw);
+    return (obj && typeof obj==='object') ? obj : {};
+  }catch(e){ return {}; }
+}
+function saveTrash(t){ try{ localStorage.setItem(IMP_TRASH_KEY, JSON.stringify(t||{})); }catch(e){} }
+function trashPurgeOld(){
+  var t=loadTrash();
+  var cutoff = Date.now() - TRASH_TTL_DAYS*24*60*60*1000;
+  var changed=false;
+  Object.keys(t).forEach(function(k){
+    if(!t[k] || !t[k].deletedAt || t[k].deletedAt < cutoff){
+      delete t[k]; changed=true;
+    }
+  });
+  if(changed) saveTrash(t);
+  return Object.keys(t).length;
+}
+function trashMove(id){
+  if(!id||!convs[id]) return;
+  var t=loadTrash();
+  t[id] = Object.assign({}, convs[id], { deletedAt: Date.now() });
+  saveTrash(t);
+  delete convs[id];
+  // limpa flags
+  if(typeof impFlags==='object'&&impFlags){
+    ['archived','locked','pinned','muted'].forEach(function(k){
+      if(impFlags[k]) impFlags[k]=impFlags[k].filter(function(x){return x!==id;});
+    });
+    if(typeof flagsSave==='function') flagsSave();
+  }
+}
+function trashRestore(id){
+  var t=loadTrash();
+  if(!t[id]) return;
+  var c=t[id]; delete c.deletedAt;
+  convs[id]=c;
+  delete t[id]; saveTrash(t);
+  if(typeof renderSB==='function') renderSB();
+  if(typeof toast==='function') toast('Conversa restaurada');
+}
+function trashDeleteForever(id){
+  var t=loadTrash();
+  if(!t[id]) return;
+  delete t[id]; saveTrash(t);
+  if(typeof renderTrashPage==='function') renderTrashPage(document.getElementById('main'));
+}
+function trashEmpty(){
+  if(!confirm('Esvaziar lixeira? Todas as conversas serao excluidas permanentemente.')) return;
+  saveTrash({});
+  renderTrashPage(document.getElementById('main'));
+  if(typeof toast==='function') toast('Lixeira esvaziada');
+}
+function renderTrashPage(main){
+  trashPurgeOld();
+  var t=loadTrash();
+  var keys=Object.keys(t).sort(function(a,b){return (t[b].deletedAt||0)-(t[a].deletedAt||0);});
+  var html='<div class="trash-page">'+
+    '<h2>🗑️ Lixeira</h2>'+
+    '<div class="trash-sub">Conversas excluidas ficam aqui por '+TRASH_TTL_DAYS+' dias antes da exclusao definitiva.</div>'+
+    '<div class="trash-actions">'+
+      '<button onclick="renderTrashPage(document.getElementById(\'main\'))">↻ Recarregar</button>'+
+      (keys.length ? '<button class="danger" onclick="trashEmpty()">Esvaziar lixeira ('+keys.length+')</button>' : '')+
+    '</div>';
+  if(keys.length===0){
+    html += '<div class="trash-empty">Lixeira vazia</div>';
+  } else {
+    html += '<div class="trash-list">';
+    keys.forEach(function(id){
+      var c=t[id];
+      var lm = (c.msgs && c.msgs[c.msgs.length-1]) || {t:''};
+      var d = new Date(c.deletedAt||0);
+      var diasRest = Math.max(0, TRASH_TTL_DAYS - Math.floor((Date.now()-c.deletedAt)/(24*60*60*1000)));
+      html += '<div class="trash-row">'+
+        '<div class="trash-av" style="background:'+cr(c.nm||'?')+'">'+av(c.nm||'?')+'</div>'+
+        '<div class="trash-info">'+
+          '<div class="nm">'+esc(c.nm||'(sem nome)')+'</div>'+
+          '<div class="meta">Excluida em '+d.toLocaleString('pt-BR')+' &bull; '+diasRest+' dia'+(diasRest!==1?'s':'')+' restantes</div>'+
+          '<div class="preview">'+esc(lm.t||'(sem mensagens)')+'</div>'+
+        '</div>'+
+        '<div class="trash-act">'+
+          '<button onclick="trashRestore(\''+id+'\')">↶ Restaurar</button>'+
+          '<button class="del" onclick="trashDeleteForever(\''+id+'\');renderTrashPage(document.getElementById(\'main\'))">Excluir</button>'+
+        '</div>'+
+      '</div>';
+    });
+    html += '</div>';
+  }
+  html += '</div>';
+  main.style.cssText='';
+  main.innerHTML=html;
+}
+// Auto-purge ao carregar
+trashPurgeOld();
 
 function computeMetrics(){
   var all = window.convs ? Object.values(window.convs) : [];
@@ -1201,19 +1318,14 @@ function lembreteRapido(){
 
 function excluirConv(){
   if(!cur||!convs[cur])return;
-  if(!confirm('Excluir conversa "'+convs[cur].nm+'"? Esta acao nao pode ser desfeita nesta versao.')) return;
+  if(!confirm('Mover "'+convs[cur].nm+'" para a lixeira? Vai ficar 30 dias antes da exclusao definitiva.')) return;
   var id=cur;
-  delete convs[id];
-  if(typeof impFlags==='object'&&impFlags){
-    impFlags.archived=(impFlags.archived||[]).filter(function(x){return x!==id;});
-    impFlags.locked=(impFlags.locked||[]).filter(function(x){return x!==id;});
-    if(typeof flagsSave==='function') flagsSave();
-  }
+  trashMove(id);
   cur=null;
   document.getElementById('right').style.display='none';
   if(typeof showEmpty==='function') showEmpty();
   if(typeof renderSB==='function') renderSB();
-  if(typeof toast==='function') toast('Conversa excluida');
+  if(typeof toast==='function') toast('Conversa movida pra lixeira (30d)');
 }
 
 function notaRapida(){
