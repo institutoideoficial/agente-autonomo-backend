@@ -316,6 +316,15 @@ async function run(){
     expect(html.includes("function agendaCreate"), "Agenda: create");
     expect(html.includes("function agendaCancel"), "Agenda: cancel");
     expect(html.includes("function agendaSubmit"), "Agenda: submit");
+    // Busca expandida v4.9
+    expect(html.includes("(c.msgs||[]).map"), "Busca: matchea conteudo de mensagens");
+    expect(html.includes("inp.focus(); inp.select"), "Busca: atalho '/' foca input");
+    // Som + Notif v4.10
+    expect(html.includes("function playBeep"), "Audio: playBeep");
+    expect(html.includes("function showNotif"), "Notif: showNotif");
+    expect(html.includes("AudioContext"), "Audio: WebAudio API");
+    expect(html.includes("notifPermission"), "Notif: pede permissao");
+    expect(html.includes("IMP_AUDIO_KEY"), "Audio: localStorage toggle");
   }
 
   console.log("\n== Teste: API agendamento (v4.8) ==");
