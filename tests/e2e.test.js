@@ -336,6 +336,21 @@ async function run(){
     expect(html.includes("function greennMatchOrCreateConv"), "Greenn: match/create conv");
     expect(html.includes("function greennAutoTag"), "Greenn: tag auto");
     expect(html.includes('greenn_event'), "Greenn: SSE handler");
+    // v4.13 Greenn templates + historico
+    expect(html.includes("'Greenn-BoasVindas'"), "Greenn: template boas-vindas");
+    expect(html.includes("'Greenn-Abandono'"), "Greenn: template abandono");
+    expect(html.includes("'Greenn-Recusada'"), "Greenn: template recusada");
+    expect(html.includes("'Greenn-Reembolso'"), "Greenn: template reembolso");
+    expect(html.includes("{produto}"), "Greenn: variavel produto em templates");
+    expect(html.includes("{valor}"), "Greenn: variavel valor");
+    expect(html.includes("function renderGreennSection"), "Greenn: historico no painel");
+    expect(html.includes("greennHistory"), "Greenn: array de historico");
+    expect(html.includes("greennLast"), "Greenn: ultimo evento armazenado");
+    // v4.14 Regras UI
+    expect(html.includes("function greennRulesFetch"), "Rules: fetch regras");
+    expect(html.includes("function greennRuleToggle"), "Rules: toggle regra");
+    expect(html.includes("function greennRuleSaveFields"), "Rules: salvar regras");
+    expect(html.includes("Regras de auto-follow-up"), "Rules: card na pagina");
   }
 
   console.log("\n== Teste: Webhook Greenn (v4.12) ==");
@@ -387,6 +402,69 @@ async function run(){
     expect(!!grEvt, "SSE broadcast greenn_event recebido");
     expect(grEvt && grEvt.data && grEvt.data.status === 'refused', "status refused na SSE");
     expect(grEvt && grEvt.data && grEvt.data.statusLabel === 'Recusada', "statusLabel Recusada");
+  }
+
+  console.log("\n== Teste: Greenn auto-follow-up rules (v4.14) ==");
+  {
+    // Lista regras default
+    const r1 = await fetch(`http://127.0.0.1:${CRM_PORT}/api/integrations/greenn/rules`);
+    const j1 = await r1.json();
+    expect(j1.ok === true && Array.isArray(j1.rules), "regras carregaram");
+    expect(j1.rules.some(r => r.status === 'paid' && r.enabled), "regra paid habilitada por default");
+    expect(j1.rules.some(r => r.status === 'abandoned' && r.enabled), "regra abandoned habilitada");
+
+    // Dispara webhook de 'paid' - deve criar agendamento automatico
+    const pagoPayload = {
+      event: 'saleUpdated',
+      data: {
+        customer: { name: 'Auto Test', phone: '5511966665555', email: 'auto@test.com' },
+        product: { name: 'Curso Teste Auto' },
+        transaction: { id: 'tx_auto_1', status: 'paid', total: 999.90 }
+      }
+    };
+    const r2 = await fetch(`http://127.0.0.1:${CRM_PORT}/api/webhook/greenn`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(pagoPayload)
+    });
+    const j2 = await r2.json();
+    expect(j2.ok === true, "webhook processou");
+    expect(typeof j2.autoScheduledId === 'string' && j2.autoScheduledId.startsWith('sch_'), "agendamento auto criado");
+
+    // Confere que o agendamento existe
+    const r3 = await fetch(`http://127.0.0.1:${CRM_PORT}/api/scheduled?status=pending`);
+    const j3 = await r3.json();
+    const autoItem = j3.items.find(x => x.id === j2.autoScheduledId);
+    expect(!!autoItem, "agendamento aparece na lista pending");
+    expect(autoItem.source === 'greenn-auto', "tem source=greenn-auto");
+    expect(autoItem.sourceStatus === 'paid', "sourceStatus preservado");
+    expect(autoItem.sourceProduct === 'Curso Teste Auto', "sourceProduct preservado");
+    expect(autoItem.message.includes('Auto'), "mensagem expandida com {nome}");
+    expect(autoItem.message.includes('Curso Teste Auto'), "mensagem expandida com {produto}");
+    expect(autoItem.message.includes('999'), "mensagem expandida com {valor}");
+
+    // Update regra pra desabilitar 'paid'
+    const newRules = j1.rules.map(r => r.status === 'paid' ? { ...r, enabled: false } : r);
+    const r4 = await fetch(`http://127.0.0.1:${CRM_PORT}/api/integrations/greenn/rules`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newRules)
+    });
+    const j4 = await r4.json();
+    expect(j4.ok === true, "update rules OK");
+    expect(j4.rules.find(r => r.status === 'paid').enabled === false, "paid desabilitada");
+
+    // Agora webhook paid NAO deve criar agendamento
+    const r5 = await fetch(`http://127.0.0.1:${CRM_PORT}/api/webhook/greenn`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ data: { customer: { phone: '5511955554444' }, transaction: { status: 'paid' } } })
+    });
+    const j5 = await r5.json();
+    expect(j5.autoScheduledId === null, "sem autoSchedule quando regra desabilitada");
+
+    // Restaura regras pra nao atrapalhar outros testes
+    await fetch(`http://127.0.0.1:${CRM_PORT}/api/integrations/greenn/rules`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(j1.rules)
+    });
   }
 
   console.log("\n== Teste: API agendamento (v4.8) ==");

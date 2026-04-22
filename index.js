@@ -204,6 +204,34 @@ function greennStatusLabel(status) {
   return m[status] || status || "—";
 }
 
+// v4.14: regras de auto-follow-up por status (storage JSON)
+const GREENN_RULES_FILE = process.env.GREENN_RULES_FILE || path.join(__dirname, "data", "greenn-rules.json");
+const GREENN_RULES_DEFAULTS = [
+  { status: "paid",        delayMin: 1,   enabled: true, message: "{nome}, que felicidade ter voce com a gente! 🌟\n\nSua matricula em {produto} foi aprovada! ({valor})\n\nEm instantes voce recebe o acesso. Qualquer duvida me chama por aqui.\n\nBora transformar sua oratoria? ✨" },
+  { status: "approved",    delayMin: 1,   enabled: true, message: "{nome}, compra do {produto} aprovada ({valor})! 🎉 Em instantes chega o acesso. Qualquer duvida, estou aqui!" },
+  { status: "abandoned",   delayMin: 15,  enabled: true, message: "Oi {nome}! Vi que voce comecou a compra do {produto} e parou no meio do caminho. Deu algum problema? Posso te ajudar em alguma etapa?\n\nSe for financeiro, conseguimos te ajudar com parcelamento ou Pix." },
+  { status: "refused",     delayMin: 5,   enabled: true, message: "{nome}, sua compra do {produto} nao foi aprovada. Podemos tentar outra forma de pagamento? Tenho Pix, cartao parcelado ou boleto.\n\nSe preferir te passo um link novo." },
+  { status: "declined",    delayMin: 5,   enabled: true, message: "{nome}, o cartao recusou a compra do {produto}. Vamos tentar outro metodo? Posso te enviar um Pix ou boleto agora mesmo." },
+  { status: "refunded",    delayMin: 1,   enabled: false,message: "{nome}, confirmei o reembolso do {produto} ({valor}). Chega na sua conta em ate 7 dias uteis.\n\nSe mudar de ideia, eh so me avisar!" }
+];
+function greennRulesLoad() {
+  try { return JSON.parse(fs.readFileSync(GREENN_RULES_FILE, "utf8")); }
+  catch { fs.writeFileSync(GREENN_RULES_FILE, JSON.stringify(GREENN_RULES_DEFAULTS, null, 2)); return GREENN_RULES_DEFAULTS.slice(); }
+}
+function greennRulesSave(arr) {
+  try { fs.writeFileSync(GREENN_RULES_FILE, JSON.stringify(arr || [], null, 2)); } catch (e) { console.error("[greenn rules]", e?.message); }
+}
+function expandGreennTemplate(tpl, ev) {
+  const first = String(ev.name || '').split(' ')[0] || '';
+  const valor = (typeof ev.total === 'number' && ev.total > 0) ? ('R$ ' + ev.total.toFixed(2).replace('.', ',')) : '';
+  return String(tpl || '')
+    .replace(/\{nome\}/g, first)
+    .replace(/\{produto\}/g, ev.productName || '')
+    .replace(/\{valor\}/g, valor)
+    .replace(/\{statusLabel\}/g, ev.statusLabel || '')
+    .replace(/\{telefone\}/g, ev.phone || '');
+}
+
 app.post("/api/webhook/greenn", (req, res) => {
   try {
     // Auth opcional
@@ -217,6 +245,42 @@ app.post("/api/webhook/greenn", (req, res) => {
     const arr = greennLoad();
     arr.push(norm);
     greennSave(arr);
+
+    // v4.14: aplica regra de auto-follow-up se houver
+    let autoScheduledId = null;
+    try {
+      if (norm.phone) {
+        const rules = greennRulesLoad();
+        const rule = rules.find(r => r.enabled && r.status === norm.status);
+        if (rule && rule.message) {
+          const expanded = expandGreennTemplate(rule.message, norm);
+          const sendAt = Date.now() + (Number(rule.delayMin) || 0) * 60 * 1000;
+          const schedArr = schedLoad();
+          const item = {
+            id: schedNewId(),
+            phone: norm.phone,
+            message: expanded,
+            note: `[auto Greenn: ${norm.statusLabel}]`,
+            sendAt,
+            status: "pending",
+            createdAt: Date.now(),
+            sentAt: null,
+            error: null,
+            source: "greenn-auto",
+            sourceStatus: norm.status,
+            sourceProduct: norm.productName,
+            sourceTransaction: norm.transactionId
+          };
+          schedArr.push(item);
+          schedSave(schedArr);
+          autoScheduledId = item.id;
+          console.log(`[greenn-auto] agendou ${item.id} pra ${new Date(sendAt).toISOString()} (${norm.status})`);
+        }
+      }
+    } catch (e) {
+      console.error("[greenn-auto]", e?.message);
+    }
+
     // Broadcast SSE pro frontend reagir
     broadcastSSE({
       type: "greenn_event",
@@ -231,14 +295,33 @@ app.post("/api/webhook/greenn", (req, res) => {
         total: norm.total,
         currency: norm.currency,
         transactionId: norm.transactionId,
-        receivedAt: norm.receivedAt
+        receivedAt: norm.receivedAt,
+        autoScheduledId
       }
     });
-    res.json({ ok: true, normalized: { phone: norm.phone, name: norm.name, status: norm.status } });
+    res.json({ ok: true, normalized: { phone: norm.phone, name: norm.name, status: norm.status }, autoScheduledId });
   } catch (e) {
     console.error("[greenn webhook]", e?.message);
     res.status(500).json({ ok: false, error: e?.message });
   }
+});
+
+// v4.14: CRUD de regras
+app.get("/api/integrations/greenn/rules", (req, res) => {
+  res.json({ ok: true, rules: greennRulesLoad() });
+});
+app.put("/api/integrations/greenn/rules", (req, res) => {
+  const arr = Array.isArray(req.body) ? req.body : req.body?.rules;
+  if (!Array.isArray(arr)) return res.status(400).json({ ok: false, error: "body deve ser array de regras" });
+  // sanitiza
+  const clean = arr.map(r => ({
+    status: String(r.status || '').toLowerCase(),
+    delayMin: Math.max(0, Math.min(60 * 24, Number(r.delayMin) || 0)),
+    enabled: !!r.enabled,
+    message: String(r.message || '')
+  })).filter(r => r.status && r.message);
+  greennRulesSave(clean);
+  res.json({ ok: true, rules: clean });
 });
 
 // Lista eventos recentes (pra UI de Integrações)

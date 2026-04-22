@@ -294,6 +294,30 @@ body{background:var(--bg);color:var(--text);height:100vh;display:flex;overflow:h
 .int-evt-name{font-weight:600;color:var(--text)}
 .int-evt-meta{font-size:11px;color:var(--text2);margin-top:2px}
 .int-evt-val{color:var(--gold);font-weight:700}
+.rules-list{display:flex;flex-direction:column;gap:8px;margin-bottom:14px}
+.rule-row{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:12px 14px}
+.rule-head{display:flex;align-items:center;gap:10px;cursor:pointer}
+.rule-stt{padding:3px 9px;border-radius:9px;font-size:10px;font-weight:700;text-transform:uppercase;flex-shrink:0;min-width:88px;text-align:center}
+.rule-stt.paid,.rule-stt.approved{background:#0d2818;color:#10b981}
+.rule-stt.refused,.rule-stt.declined,.rule-stt.failed{background:#3a1a1a;color:#ef4444}
+.rule-stt.abandoned{background:#2d1f3a;color:#8b5cf6}
+.rule-stt.refunded{background:#2a1a0a;color:#f59e0b}
+.rule-stt.pending,.rule-stt.waiting_payment{background:#3a2e0a;color:var(--gold)}
+.rule-info{flex:1;font-size:12px}
+.rule-info .rn{font-weight:600;color:var(--text)}
+.rule-info .rd{font-size:11px;color:var(--text2);margin-top:2px}
+.rule-toggle{width:36px;height:20px;border-radius:10px;background:var(--panel2);position:relative;cursor:pointer;flex-shrink:0;transition:background .15s}
+.rule-toggle::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#888;transition:all .15s}
+.rule-toggle.on{background:var(--gold3)}
+.rule-toggle.on::after{left:18px;background:var(--gold)}
+.rule-body{display:none;margin-top:12px;padding-top:12px;border-top:1px dashed var(--border)}
+.rule-body.open{display:block}
+.rule-row input[type=number]{background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:5px 9px;color:var(--text);font-size:12px;width:80px}
+.rule-body textarea{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 11px;color:var(--text);font-size:12px;font-family:inherit;min-height:90px;margin-top:8px;resize:vertical;box-sizing:border-box}
+.rule-body textarea:focus{outline:none;border-color:var(--gold)}
+.rule-actions{margin-top:10px;display:flex;gap:8px;justify-content:flex-end}
+.rule-actions button{background:var(--panel2);color:var(--text);border:none;border-radius:6px;padding:7px 14px;cursor:pointer;font-size:12px}
+.rule-actions button.primary{background:var(--gold);color:#111;font-weight:700}
 
 /* CONV LIST */
 #cl{flex:1;overflow-y:auto}
@@ -1280,9 +1304,56 @@ async function fetchGreennEvents(limit){
   }catch(e){ return []; }
 }
 
+async function greennRulesFetch(){
+  try{ var r=await fetch('/api/integrations/greenn/rules'); var d=await r.json(); return d.rules||[]; }catch(e){ return []; }
+}
+async function greennRulesPut(rules){
+  var r=await fetch('/api/integrations/greenn/rules',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(rules)});
+  return r.json();
+}
+var _greennRulesCache = [];
+function greennRuleToggle(status){
+  _greennRulesCache.forEach(function(r){ if(r.status===status) r.enabled=!r.enabled; });
+  greennRulesPut(_greennRulesCache).then(function(d){
+    if(d.ok){ if(typeof toast==='function') toast('Regra salva'); renderIntegracoesPage(document.getElementById('main')); }
+  });
+}
+function greennRuleToggleBody(status){
+  var el=document.getElementById('rb-'+status); if(el) el.classList.toggle('open');
+}
+function greennRuleSaveFields(status){
+  var delay=Number(document.getElementById('rdel-'+status).value)||0;
+  var msg=document.getElementById('rmsg-'+status).value;
+  _greennRulesCache.forEach(function(r){ if(r.status===status){ r.delayMin=delay; r.message=msg; } });
+  greennRulesPut(_greennRulesCache).then(function(d){
+    if(d.ok){ if(typeof toast==='function') toast('Regra atualizada'); }
+  });
+}
+
 async function renderIntegracoesPage(main){
   var st = await fetchGreennStatus();
   var events = await fetchGreennEvents(30);
+  _greennRulesCache = await greennRulesFetch();
+  var rulesHtml = _greennRulesCache.map(function(r){
+    var lblMap = {paid:'Aprovada',approved:'Aprovada',refused:'Recusada',declined:'Recusada',failed:'Falhou',refunded:'Reembolsada',abandoned:'Abandonou carrinho',chargedback:'Chargeback',cancelled:'Cancelada',pending:'Pendente',waiting_payment:'Aguardando'};
+    var lbl = lblMap[r.status] || r.status;
+    return '<div class="rule-row">'+
+      '<div class="rule-head" onclick="greennRuleToggleBody(\''+esc(r.status)+'\')">'+
+        '<span class="rule-stt '+esc(r.status)+'">'+esc(lbl)+'</span>'+
+        '<div class="rule-info"><div class="rn">Quando status = '+esc(r.status)+'</div>'+
+          '<div class="rd">Agenda em '+(r.delayMin||0)+' min &middot; '+(r.enabled?'ativo':'desativado')+'</div></div>'+
+        '<div class="rule-toggle '+(r.enabled?'on':'')+'" onclick="event.stopPropagation();greennRuleToggle(\''+esc(r.status)+'\')"></div>'+
+      '</div>'+
+      '<div class="rule-body" id="rb-'+esc(r.status)+'">'+
+        '<label style="font-size:11px;color:var(--text2)">Atraso (minutos):</label> '+
+        '<input type="number" id="rdel-'+esc(r.status)+'" value="'+Number(r.delayMin||0)+'" min="0" max="1440">'+
+        '<textarea id="rmsg-'+esc(r.status)+'">'+esc(r.message||'')+'</textarea>'+
+        '<div class="rule-actions">'+
+          '<button class="primary" onclick="greennRuleSaveFields(\''+esc(r.status)+'\')">Salvar</button>'+
+        '</div>'+
+      '</div>'+
+    '</div>';
+  }).join('');
   var url = (st && st.webhookUrl) || (location.origin + '/api/webhook/greenn');
   var tokenStatus = (st && st.tokenConfigured)
     ? '<span style="color:#10b981">✓ Configurado (env GREENN_WEBHOOK_TOKEN)</span>'
@@ -1310,6 +1381,13 @@ async function renderIntegracoesPage(main){
       '</div>'+
     '</div>'+
 
+    '<div class="int-card">'+
+      '<h3>Regras de auto-follow-up <span class="int-badge">backend</span></h3>'+
+      '<div class="int-sub" style="margin-bottom:12px">Quando um evento chega, o servidor agenda automaticamente o envio da mensagem (via Bravos) no tempo definido. Funciona mesmo com o navegador fechado. Use {nome}, {produto}, {valor}, {statusLabel} que expandem automatico.</div>'+
+      '<div class="rules-list" id="rules-list">'+
+      rulesHtml+
+      '</div>'+
+    '</div>'+
     '<div class="int-events">'+
       '<h3>Ultimos eventos ('+events.length+')</h3>';
   if(events.length===0){
