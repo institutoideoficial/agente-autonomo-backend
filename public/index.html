@@ -121,6 +121,31 @@ body{background:var(--bg);color:var(--text);height:100vh;display:flex;overflow:h
 .tpl-form .row button{background:var(--panel2);color:var(--text);border:none;border-radius:6px;padding:8px 16px;cursor:pointer;font-size:13px}
 .tpl-form .row button.primary{background:var(--gold);color:#111;font-weight:700}
 
+/* KANBAN drag-drop (v4.4) */
+.kb-board{display:flex;padding:16px;gap:14px;align-items:flex-start;overflow-x:auto;height:100%;background:var(--bg)}
+.kb-col{min-width:260px;max-width:280px;background:var(--panel);border-radius:12px;display:flex;flex-direction:column;max-height:calc(100vh - 32px);transition:background .2s}
+.kb-col.drag-over{background:#2a2010;outline:2px dashed var(--gold);outline-offset:-2px}
+.kb-col-hd{padding:12px 14px;font-size:13px;font-weight:700;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--panel);border-radius:12px 12px 0 0}
+.kb-col-bar{width:32px;height:3px;border-radius:2px;margin-bottom:8px}
+.kb-col-cnt{background:var(--panel2);color:var(--text2);border-radius:10px;padding:2px 9px;font-size:11px;font-weight:700;min-width:20px;text-align:center}
+.kb-col-body{padding:10px;display:flex;flex-direction:column;gap:8px;overflow-y:auto;flex:1;min-height:120px}
+.kb-card{background:var(--sb);border-radius:10px;padding:11px 13px;cursor:grab;border-left:3px solid var(--gold);transition:all .15s;user-select:none}
+.kb-card:hover{background:var(--panel2);transform:translateY(-1px);box-shadow:0 4px 12px rgba(0,0,0,.3)}
+.kb-card:active{cursor:grabbing}
+.kb-card.dragging{opacity:.4}
+.kb-card-top{display:flex;align-items:center;gap:9px;margin-bottom:6px}
+.kb-card-av{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0}
+.kb-card-nm{font-size:13px;font-weight:600;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.kb-card-ts{font-size:10px;color:var(--text2);flex-shrink:0}
+.kb-card-msg{font-size:12px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:6px}
+.kb-card-foot{display:flex;justify-content:space-between;align-items:center;font-size:10px;color:var(--text2)}
+.kb-card-tag{padding:2px 8px;border-radius:8px;font-size:10px;font-weight:600;text-transform:uppercase}
+.kb-card-tag.venda{background:#0d2818;color:#10b981}
+.kb-card-tag.lead{background:#1a1f3a;color:var(--blue)}
+.kb-card-tag.urgente{background:#3a1a1a;color:#ef4444}
+.kb-card-tag.suporte{background:#2d1f3a;color:var(--purple)}
+.kb-empty{text-align:center;padding:24px 12px;color:var(--text2);font-size:11px;font-style:italic}
+
 /* CONV LIST */
 #cl{flex:1;overflow-y:auto}
 #cl::-webkit-scrollbar{width:4px}
@@ -1108,21 +1133,98 @@ function checkConn(){
 }
 
 function renderKanban(main){
-  var cols=[{id:'open',label:'Abertas',color:'var(--gold)'},{id:'pending',label:'Pendentes',color:'var(--yellow)'},{id:'bot',label:'Bot',color:'var(--purple)'},{id:'resolved',label:'Resolvidas',color:'var(--text2)'}];
-  main.style.cssText='display:flex;padding:14px;gap:12px;align-items:flex-start;overflow:auto';
+  var cols=[
+    {id:'open',     label:'Abertas',    color:'#10b981'},
+    {id:'pending',  label:'Pendentes',  color:'#f59e0b'},
+    {id:'bot',      label:'Em atendimento', color:'#8b5cf6'},
+    {id:'resolved', label:'Resolvidas', color:'#6b7280'}
+  ];
+  main.style.cssText='';
+  main.className = '';
+  main.innerHTML = '<div class="kb-board" id="kb-board"></div>';
+  var board = document.getElementById('kb-board');
   cols.forEach(function(col){
-    var items=Object.values(convs).filter(function(c){return c.st===col.id;});
-    var div=document.createElement('div');
-    div.style.cssText='min-width:220px;background:var(--panel);border-radius:10px;border-top:3px solid '+col.color;
-    var html='<div style="padding:11px 13px;font-size:13px;font-weight:600;display:flex;justify-content:space-between;border-bottom:1px solid var(--border)">'+col.label+'<span style="background:var(--panel2);border-radius:10px;padding:1px 7px;font-size:11px">'+items.length+'</span></div><div style="padding:7px;display:flex;flex-direction:column;gap:5px;min-height:80px">';
-    items.forEach(function(c){
-      var lm=c.msgs[c.msgs.length-1]||{t:''};
-      html+='<div style="background:var(--sb);border-radius:8px;padding:9px 11px;cursor:pointer;border-left:3px solid '+col.color+'" onclick="selConv(\''+c.id+'\');navTo(\'chats\')">'+
-        '<div style="font-size:13px;font-weight:500;margin-bottom:3px">'+esc(c.nm)+'</div>'+
-        '<div style="font-size:11px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(lm.t)+'</div>'+
-        '<div style="font-size:10px;color:var(--text2);margin-top:3px">'+c.dept+' &bull; '+(AGENTES[c.ag]||c.ag)+'</div></div>';
+    var items = Object.values(convs).filter(function(c){
+      // exclui arquivadas/trancadas do kanban
+      if(typeof isArchived==='function' && isArchived(c.id)) return false;
+      if(typeof isLocked==='function' && isLocked(c.id)) return false;
+      return c.st===col.id;
     });
-    html+='</div>';div.innerHTML=html;main.appendChild(div);
+    var colEl = document.createElement('div');
+    colEl.className = 'kb-col';
+    colEl.dataset.col = col.id;
+    colEl.innerHTML =
+      '<div class="kb-col-hd">'+
+        '<div><div class="kb-col-bar" style="background:'+col.color+'"></div>'+esc(col.label)+'</div>'+
+        '<span class="kb-col-cnt">'+items.length+'</span>'+
+      '</div>'+
+      '<div class="kb-col-body" data-col="'+col.id+'"></div>';
+    var body = colEl.querySelector('.kb-col-body');
+    items.forEach(function(c){
+      var lm = c.msgs[c.msgs.length-1] || {t:'',ts:''};
+      var card = document.createElement('div');
+      card.className = 'kb-card';
+      card.draggable = true;
+      card.dataset.id = c.id;
+      card.style.borderLeftColor = col.color;
+      card.innerHTML =
+        '<div class="kb-card-top">'+
+          '<div class="kb-card-av" style="background:'+cr(c.nm)+'">'+av(c.nm)+'</div>'+
+          '<div class="kb-card-nm">'+esc(c.nm)+'</div>'+
+          '<div class="kb-card-ts">'+esc(lm.ts||'')+'</div>'+
+        '</div>'+
+        '<div class="kb-card-msg">'+esc(lm.t||'sem mensagens')+'</div>'+
+        '<div class="kb-card-foot">'+
+          '<span>'+esc(c.dept||'-')+'</span>'+
+          (c.tag?'<span class="kb-card-tag '+esc(c.tag)+'">'+esc(c.tag)+'</span>':'')+
+        '</div>';
+      // Drag handlers
+      card.addEventListener('dragstart', function(e){
+        card.classList.add('dragging');
+        e.dataTransfer.setData('text/plain', c.id);
+        e.dataTransfer.effectAllowed = 'move';
+      });
+      card.addEventListener('dragend', function(){
+        card.classList.remove('dragging');
+        document.querySelectorAll('.kb-col.drag-over').forEach(function(x){x.classList.remove('drag-over');});
+      });
+      // Click abre conversa
+      card.addEventListener('click', function(){
+        if(card.classList.contains('dragging')) return;
+        selConv(c.id);
+        navTo('chats');
+      });
+      body.appendChild(card);
+    });
+    if(items.length===0){
+      var emp = document.createElement('div');
+      emp.className = 'kb-empty';
+      emp.textContent = 'Nenhuma conversa nesta etapa';
+      body.appendChild(emp);
+    }
+    // Drop handlers na coluna
+    colEl.addEventListener('dragover', function(e){
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      colEl.classList.add('drag-over');
+    });
+    colEl.addEventListener('dragleave', function(e){
+      if(e.target===colEl) colEl.classList.remove('drag-over');
+    });
+    colEl.addEventListener('drop', function(e){
+      e.preventDefault();
+      colEl.classList.remove('drag-over');
+      var id = e.dataTransfer.getData('text/plain');
+      var newCol = colEl.dataset.col;
+      if(!id || !convs[id]) return;
+      if(convs[id].st === newCol) return;
+      convs[id].st = newCol;
+      // re-renderiza Kanban + sidebar
+      renderKanban(main);
+      if(typeof renderSB==='function') renderSB();
+      if(typeof toast==='function') toast('Movido para "'+col.label+'"');
+    });
+    board.appendChild(colEl);
   });
 }
 

@@ -279,6 +279,14 @@ async function run(){
     expect(html.includes("{nome}"), "Templates: variavel {nome}");
     expect(html.includes("{hora}"), "Templates: variavel {hora}");
     expect(html.includes("QRS_DEFAULTS"), "Templates: array default");
+    // Kanban v4.4 drag-drop
+    expect(html.includes("kb-board"), "Kanban: board container");
+    expect(html.includes("kb-card"), "Kanban: card class");
+    expect(html.includes("kb-col"), "Kanban: col class");
+    expect(html.includes("dragstart"), "Kanban: handler dragstart");
+    expect(html.includes("dragover"), "Kanban: handler dragover");
+    expect(html.includes("'drop'"), "Kanban: handler drop");
+    expect(html.includes("Em atendimento"), "Kanban: coluna nova");
   }
 
   console.log("\n== Teste: GET / serve welcome.html ==");
