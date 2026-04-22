@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
 # setup-vps.sh - prepara VPS Ubuntu 22.04 (Contabo, DigitalOcean, etc).
 # Rodar UMA vez como root ou com sudo apos SSH:
-#   curl -sL https://raw.githubusercontent.com/Lasbastie/agente-autonomo-backend/main/infra/setup-vps.sh | sudo bash
+#   curl -sL https://raw.githubusercontent.com/Labastie/agente-autonomo-backend/main/infra/setup-vps.sh | sudo bash
 # Ou:
 #   sudo bash setup-vps.sh
+#
+# Se seu GitHub user for diferente de "Labastie", exporte antes de rodar:
+#   export GITHUB_USER=seu_user_github
 set -euo pipefail
+
+GITHUB_USER="${GITHUB_USER:-Labastie}"
 
 echo "==> Atualizando pacotes"
 apt-get update -qq
@@ -65,10 +70,10 @@ echo "==> Clonando repositorios em /opt/speakers-crm"
 mkdir -p /opt/speakers-crm
 cd /opt/speakers-crm
 if [ ! -d agente-autonomo-backend ]; then
-  git clone https://github.com/Lasbastie/agente-autonomo-backend.git
+  git clone "https://github.com/${GITHUB_USER}/agente-autonomo-backend.git"
 fi
 if [ ! -d bravos-whatsapp-api ]; then
-  git clone https://github.com/Lasbastie/bravos-whatsapp-api.git
+  git clone "https://github.com/${GITHUB_USER}/bravos-whatsapp-api.git"
 fi
 chown -R deploy:deploy /opt/speakers-crm
 

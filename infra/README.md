@@ -19,7 +19,7 @@ ssh-copy-id root@IP_DA_VPS
 ### 2. Setup da VPS
 ```bash
 ssh root@IP_DA_VPS
-curl -sL https://raw.githubusercontent.com/Lasbastie/agente-autonomo-backend/main/infra/setup-vps.sh | bash
+curl -sL https://raw.githubusercontent.com/Labastie/agente-autonomo-backend/main/infra/setup-vps.sh | bash
 ```
 (Instala Docker, firewall, fail2ban, user `deploy`, clona os repos.)
 
