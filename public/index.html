@@ -612,6 +612,11 @@ function renderSB(){
     if(curView==='archived') return isArchived(c.id);
     if(isLocked(c.id) || isArchived(c.id)) return false;
     return p.match(c);
+    }).sort(function(a,b){
+    var pa=isPinned&&isPinned(a.id)?1:0;
+    var pb=isPinned&&isPinned(b.id)?1:0;
+    if(pa!==pb) return pb-pa;
+    return 0;
   }).forEach(function(c){
     var lm=c.msgs[c.msgs.length-1]||{t:'',ts:''};
     var d=document.createElement('div');
@@ -654,11 +659,14 @@ function renderChat(id){
   main.style.overflow='hidden';
   main.innerHTML='<div class="ch-hd"><div class="ch-av" style="background:'+col+'">'+a+'</div>'+
     '<div class="ch-inf"><div id="ch-nm">'+esc(c.nm)+'</div><div id="ch-sb">'+c.dept+' &bull; '+(stl[c.st]||c.st)+' &bull; '+(AGENTES[c.ag]||c.ag)+'</div></div>'+
-    '<div style="display:flex;gap:2px">'+
-    '<button class="ic" onclick="resolverConv()" title="Resolver"></button>'+
-    '<button class="ic" onclick="toggleBot()" title="Bot">ð¤</button>'+
-    '<button class="ic" onclick="notaRapida()" title="Nota">ð</button>'+
-    '<button class="ic">®</button>'+
+    '<div style="display:flex;gap:2px;align-items:center">'+
+    '<button class="ic" onclick="favoritarConv()" id="hd-fav" title="Favoritar / Fixar no topo"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M14 4v5l-7 7v3h3l7-7h5V4h-8z" stroke="currentColor" stroke-width="2" fill="none"/><path d="M16 9V4h-2v5h2z"/></svg></button>'+
+    '<button class="ic" onclick="silenciarConv()" id="hd-mute" title="Silenciar notificacoes"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg></button>'+
+    '<button class="ic" onclick="traduzirChat()" title="Traduzir mensagens (em breve)"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12.87 15.07l-2.54-2.51.03-.03c1.74-1.94 2.98-4.17 3.71-6.53H17V4h-7V2H8v2H1v1.99h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11.76-2.04zM18.5 10h-2L12 22h2l1.12-3h4.75L21 22h2l-4.5-12zm-2.62 7l1.62-4.33L19.12 17h-3.24z"/></svg></button>'+
+    '<button class="ic" onclick="resolverConv()" title="Resolver"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg></button>'+
+    '<button class="ic" onclick="notaRapida()" title="Nota interna"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34a.9959.9959 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg></button>'+
+    '<button class="ic" onclick="toggleBot()" id="hd-bot" title="Bot IA"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M20 9V7c0-2.21-1.79-4-4-4h-3c0-1.1-.9-2-2-2s-2 .9-2 2H6C3.79 3 2 4.79 2 7v2c-1.1 0-2 .9-2 2v3c0 1.1.9 2 2 2v4c0 2.21 1.79 4 4 4h12c2.21 0 4-1.79 4-4v-4c1.1 0 2-.9 2-2v-3c0-1.1-.9-2-2-2zM7.5 11.5c.83 0 1.5.67 1.5 1.5s-.67 1.5-1.5 1.5S6 13.83 6 13s.67-1.5 1.5-1.5zm9 0c.83 0 1.5.67 1.5 1.5s-.67 1.5-1.5 1.5-1.5-.67-1.5-1.5.67-1.5 1.5-1.5zM8 18v-2h8v2H8z"/></svg></button>'+
+    '<button class="ic" onclick="encerrarChat()" title="Sair da conversa"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></button>'+
     '</div></div>'+
     '<div id="msgs"></div>'+
     '<div class="ch-ft"><div class="ft-acts">'+
@@ -786,6 +794,43 @@ function toggleBot(){
   addBub({r:'note',t:'Bot '+(botAtivo[cur]?'ATIVADO':'DESATIVADO'),ts:h()},bg);if(bg)bg.scrollTop=bg.scrollHeight;
 }
 
+
+
+function favoritarConv(){
+  if(!cur)return;
+  if(typeof impFlags!=='object'||!impFlags){return;}
+  if(!impFlags.pinned) impFlags.pinned=[];
+  var i=impFlags.pinned.indexOf(cur);
+  if(i===-1){ impFlags.pinned.push(cur); if(typeof toast==='function') toast('Fixado no topo'); }
+  else { impFlags.pinned.splice(i,1); if(typeof toast==='function') toast('Desafixado'); }
+  if(typeof flagsSave==='function') flagsSave();
+  renderSB(); renderChat(cur);
+}
+function isPinned(id){ return impFlags && impFlags.pinned && impFlags.pinned.indexOf(id)!==-1; }
+
+function silenciarConv(){
+  if(!cur)return;
+  if(typeof impFlags!=='object'||!impFlags){return;}
+  if(!impFlags.muted) impFlags.muted=[];
+  var i=impFlags.muted.indexOf(cur);
+  if(i===-1){ impFlags.muted.push(cur); if(typeof toast==='function') toast('Conversa silenciada'); }
+  else { impFlags.muted.splice(i,1); if(typeof toast==='function') toast('Notificacoes ativadas'); }
+  if(typeof flagsSave==='function') flagsSave();
+  renderChat(cur);
+}
+function isMuted(id){ return impFlags && impFlags.muted && impFlags.muted.indexOf(id)!==-1; }
+
+function traduzirChat(){
+  if(typeof toast==='function') toast('Tradutor em breve - veja sidebar Integracoes');
+  else alert('Em breve');
+}
+
+function encerrarChat(){
+  cur=null;
+  document.getElementById('right').style.display='none';
+  if(typeof showEmpty==='function') showEmpty();
+  document.querySelectorAll('.ci').forEach(function(e){e.classList.remove('active');});
+}
 
 function copiarInfoContato(){
   if(!cur||!convs[cur])return;
