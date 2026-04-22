@@ -295,6 +295,14 @@ async function run(){
     expect(html.includes("Por departamento"), "Dashboard: secao departamento");
     expect(html.includes("Por etiqueta"), "Dashboard: secao etiqueta");
     expect(html.includes("avgRespMin"), "Dashboard: tempo medio resposta");
+    // Tags v4.6
+    expect(html.includes("function renderTagsPage"), "Tags: render page");
+    expect(html.includes("function loadTags"), "Tags: loadTags");
+    expect(html.includes("function tagAdd"), "Tags: add");
+    expect(html.includes("function tagRemove"), "Tags: remove");
+    expect(html.includes("function tagSetColor"), "Tags: setColor");
+    expect(html.includes("TAGS_DEFAULTS"), "Tags: defaults");
+    expect(html.includes("IMP_TAGS_KEY"), "Tags: localStorage key");
   }
 
   console.log("\n== Teste: GET / serve welcome.html ==");

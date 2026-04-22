@@ -173,6 +173,23 @@ body{background:var(--bg);color:var(--text);height:100vh;display:flex;overflow:h
 .dash-bar-fill > div{height:100%;background:var(--gold);transition:width .4s}
 .dash-bar-num{font-weight:700;color:var(--text);min-width:30px;text-align:right}
 
+/* TAGS PAGE (v4.6) */
+.tags-page{padding:24px;overflow-y:auto;height:100%;background:var(--bg)}
+.tags-page h2{font-size:22px;margin-bottom:6px}
+.tags-sub{color:var(--text2);font-size:13px;margin-bottom:18px}
+.tags-list{display:flex;flex-direction:column;gap:8px;margin-bottom:18px;max-width:680px}
+.tag-row{display:flex;align-items:center;gap:12px;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:11px 14px}
+.tag-chip{padding:5px 14px;border-radius:14px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:#fff;flex-shrink:0;min-width:90px;text-align:center}
+.tag-name{flex:1;font-size:13px;color:var(--text)}
+.tag-count{font-size:11px;color:var(--text2);background:var(--panel2);padding:3px 9px;border-radius:10px}
+.tag-act button{background:var(--panel2);color:var(--text2);border:none;border-radius:6px;padding:6px 10px;cursor:pointer;font-size:11px;margin-left:4px}
+.tag-act button:hover{background:var(--gold3);color:var(--gold)}
+.tag-act button.danger:hover{background:#3a1a1a;color:#ef4444}
+.tag-form{background:var(--panel);border:1px dashed var(--gold3);border-radius:10px;padding:14px;max-width:680px;margin-bottom:18px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.tag-form input[type=text]{flex:1;min-width:180px;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 11px;color:var(--text);font-size:13px}
+.tag-form input[type=color]{width:48px;height:38px;border:1px solid var(--border);border-radius:6px;background:transparent;cursor:pointer}
+.tag-form button{background:var(--gold);color:#111;border:none;border-radius:6px;padding:9px 18px;cursor:pointer;font-weight:700;font-size:13px}
+
 /* CONV LIST */
 #cl{flex:1;overflow-y:auto}
 #cl::-webkit-scrollbar{width:4px}
@@ -540,6 +557,7 @@ function navTo(sec){
   else if(sec==='reports') renderReports(main);
   else if(sec==='config') renderConfig(main);
   else if(sec==='templates') renderTemplatesPage(main);
+  else if(sec==='tags') renderTagsPage(main);
   else if(PLACEHOLDERS[sec]) renderPlaceholder(main, sec);
 }
 
@@ -626,12 +644,7 @@ var PLACEHOLDERS={
     desc:'Programe envios pra horarios especificos. Ideal pra disparos pos-aula, follow-up de leads e lembretes de mentoria.',
     features:['Agendar texto e midia','Repeticao diaria/semanal','Cancelar antes do envio','Historico de envios feitos']
   },
-  tags: {
-    icon:'<svg width="34" height="34" viewBox="0 0 24 24" fill="currentColor"><path d="M21.41 11.58l-9-9C12.05 2.22 11.55 2 11 2H4c-1.1 0-2 .9-2 2v7c0 .55.22 1.05.59 1.42l9 9c.36.36.86.58 1.41.58.55 0 1.05-.22 1.41-.59l7-7c.37-.36.59-.86.59-1.41 0-.55-.23-1.06-.59-1.42z"/></svg>',
-    title:'Etiquetas personalizadas',
-    desc:'Crie suas proprias categorias coloridas. Por enquanto use os filtros pill no topo da lista de conversas.',
-    features:['Cores personalizadas','Filtro por etiqueta','Multiplas etiquetas por contato','Atribuicao em massa']
-  },
+  
   
   disparos: {
     icon:'<svg width="34" height="34" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>',
@@ -779,6 +792,88 @@ function renderPills(){
     setPill(newPill.id);
   };
   el.appendChild(add);
+}
+
+// === TAGS customizaveis (v4.6) ===
+var IMP_TAGS_KEY="imp_tags_v1";
+var TAGS_DEFAULTS=[
+  {name:'venda',   color:'#10b981'},
+  {name:'lead',    color:'#3b82f6'},
+  {name:'urgente', color:'#ef4444'},
+  {name:'suporte', color:'#8b5cf6'},
+  {name:'vip',     color:'#C8A84B'}
+];
+function loadTags(){
+  try{
+    var raw=localStorage.getItem(IMP_TAGS_KEY);
+    if(!raw) return TAGS_DEFAULTS.slice();
+    var arr=JSON.parse(raw);
+    return Array.isArray(arr)&&arr.length?arr:TAGS_DEFAULTS.slice();
+  }catch(e){ return TAGS_DEFAULTS.slice(); }
+}
+function saveTags(arr){ try{ localStorage.setItem(IMP_TAGS_KEY, JSON.stringify(arr||[])); }catch(e){} }
+function tagColor(name){
+  var t=loadTags().find(function(x){return x.name===name;});
+  return t?t.color:'#6b7280';
+}
+function renderTagsPage(main){
+  var tags = loadTags();
+  // contar uso por tag
+  var counts = {};
+  Object.values(convs||{}).forEach(function(c){
+    if(c.tag) counts[c.tag] = (counts[c.tag]||0) + 1;
+  });
+  var html = '<div class="tags-page">'+
+    '<h2>Etiquetas</h2>'+
+    '<div class="tags-sub">Crie etiquetas coloridas pra organizar seus contatos. Atribua via painel direito de cada conversa (botao + Add).</div>'+
+    '<div class="tag-form">'+
+      '<input type="text" id="tag-new-name" placeholder="Nome da etiqueta (ex: vip-aluna)" maxlength="20">'+
+      '<input type="color" id="tag-new-color" value="#C8A84B">'+
+      '<button onclick="tagAdd()">+ Criar</button>'+
+    '</div>'+
+    '<div class="tags-list">';
+  tags.forEach(function(t,i){
+    html += '<div class="tag-row">'+
+      '<div class="tag-chip" style="background:'+esc(t.color)+'">'+esc(t.name)+'</div>'+
+      '<div class="tag-name">'+(counts[t.name]?'usada em '+counts[t.name]+' conversa'+(counts[t.name]>1?'s':''):'sem uso')+'</div>'+
+      '<div class="tag-act">'+
+        '<input type="color" value="'+esc(t.color)+'" onchange="tagSetColor('+i+', this.value)" style="width:30px;height:24px;border:none;background:none;vertical-align:middle">'+
+        '<button class="danger" onclick="tagRemove('+i+')">Excluir</button>'+
+      '</div>'+
+    '</div>';
+  });
+  html += '</div></div>';
+  main.style.cssText = '';
+  main.innerHTML = html;
+}
+function tagAdd(){
+  var n=document.getElementById('tag-new-name').value.trim().toLowerCase().replace(/\s+/g,'-');
+  var c=document.getElementById('tag-new-color').value;
+  if(!n){ alert('Digite um nome'); return; }
+  var tags=loadTags();
+  if(tags.find(function(x){return x.name===n;})){ alert('Ja existe etiqueta com esse nome'); return; }
+  tags.push({name:n, color:c});
+  saveTags(tags);
+  renderTagsPage(document.getElementById('main'));
+  if(typeof toast==='function') toast('Etiqueta criada');
+}
+function tagSetColor(i, color){
+  var tags=loadTags();
+  if(!tags[i]) return;
+  tags[i].color=color;
+  saveTags(tags);
+}
+function tagRemove(i){
+  var tags=loadTags();
+  if(!tags[i]) return;
+  if(!confirm('Excluir etiqueta "'+tags[i].name+'"? Conversas que usam ela vao perder o vinculo.')) return;
+  // remove a tag das conversas
+  var name=tags[i].name;
+  Object.values(convs||{}).forEach(function(c){ if(c.tag===name) c.tag=''; });
+  tags.splice(i,1);
+  saveTags(tags);
+  renderTagsPage(document.getElementById('main'));
+  if(typeof renderSB==='function') renderSB();
 }
 
 function computeMetrics(){
