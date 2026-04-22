@@ -294,6 +294,41 @@ body{background:var(--bg);color:var(--text);height:100vh;display:flex;overflow:h
 .int-evt-name{font-weight:600;color:var(--text)}
 .int-evt-meta{font-size:11px;color:var(--text2);margin-top:2px}
 .int-evt-val{color:var(--gold);font-weight:700}
+/* GOOGLE (v4.21) */
+.gcard{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:16px}
+.gcard.connected{border-left:4px solid #34a853}
+.gcard.disconnected{border-left:4px solid #f59e0b}
+.g-user{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+.g-avatar{width:44px;height:44px;border-radius:50%;background:var(--panel2);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:var(--gold)}
+.g-avatar img{width:100%;height:100%;border-radius:50%;object-fit:cover}
+.g-user-info .nm{font-weight:600}
+.g-user-info .em{color:var(--text2);font-size:12px;margin-top:2px}
+.g-btn{background:#34a853;color:#fff;border:none;border-radius:8px;padding:11px 22px;font-size:14px;font-weight:600;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:8px}
+.g-btn:hover{background:#2e8e48}
+.g-btn.secondary{background:var(--panel2);color:var(--text)}
+.g-btn.secondary:hover{background:#3a3a3a}
+.g-btn.danger{background:#3a1a1a;color:#ef4444;border:1px solid #ef4444}
+.g-btn.danger:hover{background:#5a2a2a}
+.g-evts{display:flex;flex-direction:column;gap:8px;margin-top:14px}
+.g-evt{background:var(--panel2);border-radius:8px;padding:11px 13px;display:flex;gap:12px;align-items:center}
+.g-evt-date{background:var(--gold3);color:var(--gold);padding:8px 11px;border-radius:8px;text-align:center;min-width:56px;flex-shrink:0}
+.g-evt-date .d{font-size:18px;font-weight:800;line-height:1}
+.g-evt-date .m{font-size:10px;text-transform:uppercase;letter-spacing:.5px;margin-top:2px}
+.g-evt-info{flex:1;min-width:0}
+.g-evt-info .sm{font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.g-evt-info .tm{font-size:11px;color:var(--text2);margin-top:2px}
+.g-evt-meet{background:#34a85322;color:#34a853;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:700;text-decoration:none;flex-shrink:0}
+.g-evt-meet:hover{background:#34a85344}
+.g-form{background:var(--bg);border:1px dashed var(--gold3);border-radius:10px;padding:14px;margin-top:14px;display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.g-form .full{grid-column:1 / -1}
+.g-form input,.g-form textarea{background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:9px 11px;color:var(--text);font-size:13px;font-family:inherit;width:100%;box-sizing:border-box}
+.g-form textarea{min-height:70px;resize:vertical}
+.g-form input:focus,.g-form textarea:focus{outline:none;border-color:var(--gold)}
+.g-form label{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text2);cursor:pointer}
+.g-setup-steps{background:var(--panel2);border-radius:8px;padding:14px;margin:14px 0;font-size:12px;line-height:1.6;color:var(--text2)}
+.g-setup-steps ol{padding-left:22px;margin:6px 0}
+.g-setup-steps code{background:var(--bg);padding:1px 6px;border-radius:4px;font-size:11px;color:var(--gold)}
+
 .plt-tabs{display:flex;gap:6px;margin-bottom:18px;border-bottom:1px solid var(--border);padding-bottom:0}
 .plt-tab{padding:10px 18px;background:transparent;border:none;color:var(--text2);font-size:13px;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;transition:all .15s;display:flex;align-items:center;gap:8px}
 .plt-tab.active{color:var(--gold);border-bottom-color:var(--gold)}
@@ -1516,6 +1551,75 @@ function kiwifyFilterChange(field, value){
   window._kiwifyFilterTimer = setTimeout(function(){ renderIntegracoesPage(document.getElementById('main')); }, field==='status'?0:300);
 }
 function kiwifyFiltersClear(){ _kiwifyFilters = { status:'', product:'', search:'' }; renderIntegracoesPage(document.getElementById('main')); }
+// === GOOGLE CALENDAR (v4.21) ===
+async function fetchGoogleStatus(){ try{ var r=await fetch('/api/integrations/google/status'); return await r.json(); }catch(e){ return null; } }
+async function fetchGoogleEvents(limit){
+  try{ var r = await fetch('/api/integrations/google/events?limit='+(limit||10)); var d = await r.json(); return d.items || []; }catch(e){ return []; }
+}
+function googleConnect(){
+  // Abre popup OAuth, ao fechar re-render
+  var w = window.open('/oauth/google/authorize', 'google_oauth', 'width=520,height=660');
+  var timer = setInterval(function(){
+    if(!w || w.closed){
+      clearInterval(timer);
+      setTimeout(function(){ renderIntegracoesPage(document.getElementById('main')); }, 500);
+    }
+  }, 500);
+}
+async function googleDisconnect(){
+  if(!confirm('Desconectar conta Google?')) return;
+  var r = await fetch('/api/integrations/google/disconnect', { method:'POST' });
+  var d = await r.json();
+  if(d.ok){
+    if(typeof toast==='function') toast('Google desconectado');
+    renderIntegracoesPage(document.getElementById('main'));
+  }
+}
+function googleFormatDate(iso){
+  try{
+    var d = new Date(iso);
+    return { day: d.getDate(), mon: d.toLocaleDateString('pt-BR',{month:'short'}).replace('.','').toUpperCase(), time: d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}), full: d.toLocaleString('pt-BR') };
+  }catch(e){ return { day:'?', mon:'?', time:'', full: iso }; }
+}
+async function googleCreateEvent(){
+  var summary = document.getElementById('g-summary').value.trim();
+  var dateStr = document.getElementById('g-date').value;
+  var durationMin = Number(document.getElementById('g-dur').value) || 60;
+  var description = document.getElementById('g-desc').value.trim();
+  var attendeesRaw = document.getElementById('g-att').value.trim();
+  var withMeet = document.getElementById('g-meet').checked;
+  if(!summary){ alert('Titulo obrigatorio'); return; }
+  if(!dateStr){ alert('Data/hora obrigatoria'); return; }
+  var start = new Date(dateStr).toISOString();
+  var attendees = attendeesRaw ? attendeesRaw.split(/[;,\n]/).map(function(e){ return { email: e.trim() }; }).filter(function(a){ return a.email; }) : [];
+  var chatPhone = (cur && convs[cur] && convs[cur].ph) ? convs[cur].ph : undefined;
+  var chatId = (cur && convs[cur] && convs[cur].chatId) ? convs[cur].chatId : undefined;
+  var r = await fetch('/api/integrations/google/events', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ summary, description, start, durationMin, attendees, withMeet, phone: chatPhone, chatId })
+  });
+  var d = await r.json();
+  if(d.ok){
+    if(typeof toast==='function') toast('Evento criado!'+(d.event.meetLink?' Com link Meet':''));
+    // Limpa form
+    document.getElementById('g-summary').value='';
+    document.getElementById('g-desc').value='';
+    document.getElementById('g-att').value='';
+    renderIntegracoesPage(document.getElementById('main'));
+  } else {
+    alert('Erro: '+(d.error||'desconhecido'));
+  }
+}
+async function googleDeleteEvent(id){
+  if(!confirm('Excluir evento?')) return;
+  var r = await fetch('/api/integrations/google/events/'+encodeURIComponent(id), { method:'DELETE' });
+  var d = await r.json();
+  if(d.ok){
+    if(typeof toast==='function') toast('Evento excluido');
+    renderIntegracoesPage(document.getElementById('main'));
+  }
+}
+
 function kiwifyCsvUrl(){
   var qs=[];
   if(_kiwifyFilters.status) qs.push('status='+encodeURIComponent(_kiwifyFilters.status));
@@ -1610,6 +1714,7 @@ async function renderIntegracoesPage(main){
   var eduzzSt = await fetchEduzzStatus();
   var hotmartSt = await fetchHotmartStatus();
   var kiwifySt = await fetchKiwifyStatus();
+  var googleSt = await fetchGoogleStatus();
 
   var header = '<div class="int-page">'+
     '<h2>🔌 Integrações</h2>'+
@@ -1627,7 +1732,103 @@ async function renderIntegracoesPage(main){
       '<button class="plt-tab '+(platform==='kiwify'?'active':'')+'" onclick="intPlatformSet(\'kiwify\')">'+
         '🥝 Kiwify <span class="plt-count">'+((kiwifySt&&kiwifySt.eventsCount)||0)+'</span>'+
       '</button>'+
+      '<button class="plt-tab '+(platform==='google'?'active':'')+'" onclick="intPlatformSet(\'google\')">'+
+        '📅 Google '+(googleSt&&googleSt.connected?'<span class="plt-count" style="background:#34a85333;color:#34a853">●</span>':'')+
+      '</button>'+
     '</div>';
+
+  if(platform === 'google'){
+    var gevents = googleSt && googleSt.connected ? await fetchGoogleEvents(10) : [];
+    // Default datetime: agora + 24h
+    var pad = function(n){ return String(n).padStart(2,'0'); };
+    var def = new Date(Date.now() + 24*60*60*1000);
+    var defLocal = def.getFullYear()+'-'+pad(def.getMonth()+1)+'-'+pad(def.getDate())+'T'+pad(def.getHours())+':00';
+
+    if(!googleSt || !googleSt.configured){
+      header += '<div class="gcard disconnected">'+
+        '<h3>📅 Google Calendar</h3>'+
+        '<div class="int-sub" style="margin-top:8px;margin-bottom:12px">Conecte sua conta Google pra criar eventos + Google Meet direto do CRM. Ideal pra agendar mentoria apos uma compra aprovada.</div>'+
+        '<div style="background:#3a1a1a;border-left:3px solid #f59e0b;padding:12px;border-radius:6px;font-size:13px;color:#f59e0b;margin-bottom:10px">⚠️ <strong>Google nao configurado no servidor.</strong> Precisa criar um projeto no Google Cloud Console (uma vez).</div>'+
+        '<div class="g-setup-steps">'+
+          '<strong>Passo-a-passo pra configurar (5 minutos):</strong>'+
+          '<ol>'+
+            '<li>Acesse <a href="https://console.cloud.google.com/" target="_blank" style="color:var(--gold)">console.cloud.google.com</a> e faca login</li>'+
+            '<li>Crie novo projeto (canto superior esquerdo) ou use existente</li>'+
+            '<li>Menu <strong>APIs e Servicos</strong> > <strong>Biblioteca</strong> > busque e ative <code>Google Calendar API</code></li>'+
+            '<li>Menu <strong>APIs e Servicos</strong> > <strong>Tela de consentimento OAuth</strong>: Tipo Externo, preencha nome do app, email, finalize</li>'+
+            '<li>Menu <strong>Credenciais</strong> > <strong>+ Criar credenciais</strong> > <strong>ID do cliente OAuth</strong> > Tipo <strong>Aplicativo da Web</strong></li>'+
+            '<li>Em <strong>URIs de redirecionamento autorizados</strong>, cole: <code>'+esc(googleSt&&googleSt.redirectUri||location.origin+'/oauth/google/callback')+'</code></li>'+
+            '<li>Copie <strong>Client ID</strong> e <strong>Client Secret</strong></li>'+
+            '<li>No servidor, defina as envs: <code>GOOGLE_CLIENT_ID=xxx</code> e <code>GOOGLE_CLIENT_SECRET=yyy</code> e reinicie</li>'+
+            '<li>Clique em "Conectar Google" aqui</li>'+
+          '</ol>'+
+        '</div>'+
+      '</div>';
+    } else if(!googleSt.connected){
+      header += '<div class="gcard disconnected">'+
+        '<h3>📅 Google Calendar</h3>'+
+        '<div class="int-sub" style="margin-top:8px;margin-bottom:16px">Google Cloud configurado ✓. Agora basta autorizar o acesso a sua agenda.</div>'+
+        '<button class="g-btn" onclick="googleConnect()">'+
+          '<svg width="18" height="18" viewBox="0 0 24 24"><path fill="#fff" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#fff" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" opacity=".85"/><path fill="#fff" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" opacity=".7"/><path fill="#fff" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" opacity=".6"/></svg>'+
+          'Conectar Google'+
+        '</button>'+
+      '</div>';
+    } else {
+      // Conectado
+      var user = googleSt;
+      header += '<div class="gcard connected">'+
+        '<h3>📅 Google Calendar <span class="int-badge">Conectado</span></h3>'+
+        '<div class="g-user" style="margin-top:12px">'+
+          '<div class="g-avatar">'+(user.picture?'<img src="'+esc(user.picture)+'" alt="">':esc((user.name||user.email||'?').charAt(0).toUpperCase()))+'</div>'+
+          '<div class="g-user-info">'+
+            '<div class="nm">'+esc(user.name||'?')+'</div>'+
+            '<div class="em">'+esc(user.email||'')+'</div>'+
+          '</div>'+
+          '<div style="flex:1"></div>'+
+          '<button class="g-btn danger" onclick="googleDisconnect()">Desconectar</button>'+
+        '</div>'+
+      '</div>'+
+
+      '<div class="gcard">'+
+        '<h3>Criar evento</h3>'+
+        '<div class="int-sub" style="margin-bottom:12px">Abre agenda do aluno (convidado) + cria link Google Meet se marcar a opcao. Ideal pra mentoria 1:1.</div>'+
+        '<div class="g-form">'+
+          '<input type="text" id="g-summary" placeholder="Titulo do evento (ex: Mentoria Speakers Play - Vanessa x {nome})" class="full">'+
+          '<input type="datetime-local" id="g-date" value="'+defLocal+'">'+
+          '<input type="number" id="g-dur" value="60" min="15" max="480" placeholder="Duracao (min)">'+
+          '<input type="text" id="g-att" placeholder="Emails dos convidados (virgula ou ;) - ex: aluno@test.com" class="full">'+
+          '<textarea id="g-desc" placeholder="Descricao / pauta da reuniao" class="full"></textarea>'+
+          '<label class="full" style="grid-column:1 / -1"><input type="checkbox" id="g-meet" checked> Criar link Google Meet automatico</label>'+
+          '<button class="g-btn full" onclick="googleCreateEvent()">Criar evento</button>'+
+        '</div>'+
+      '</div>'+
+
+      '<div class="gcard">'+
+        '<h3>Proximos eventos ('+gevents.length+')</h3>';
+      if(gevents.length===0){
+        header += '<div style="color:var(--text2);text-align:center;padding:24px;font-style:italic">Sem eventos nos proximos 30 dias</div>';
+      } else {
+        header += '<div class="g-evts">';
+        gevents.forEach(function(e){
+          var d = googleFormatDate(e.start);
+          header += '<div class="g-evt">'+
+            '<div class="g-evt-date"><div class="d">'+d.day+'</div><div class="m">'+d.mon+'</div></div>'+
+            '<div class="g-evt-info">'+
+              '<div class="sm">'+esc(e.summary||'(sem titulo)')+'</div>'+
+              '<div class="tm">'+d.time+(e.attendees&&e.attendees.length?' · '+e.attendees.length+' convidado(s)':'')+'</div>'+
+            '</div>'+
+            (e.meetLink?'<a class="g-evt-meet" href="'+esc(e.meetLink)+'" target="_blank">Meet</a>':'')+
+            '<button class="g-btn secondary" style="padding:6px 10px;font-size:11px" onclick="googleDeleteEvent(\''+esc(e.id)+'\')">🗑️</button>'+
+          '</div>';
+        });
+        header += '</div>';
+      }
+      header += '</div>';
+    }
+    header += '</div>';
+    main.style.cssText = ''; main.innerHTML = header;
+    return;
+  }
 
   if(platform === 'kiwify'){
     var _kg = await fetchKiwifyEvents(100, _kiwifyFilters);

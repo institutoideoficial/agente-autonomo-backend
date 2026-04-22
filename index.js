@@ -480,6 +480,272 @@ app.get("/api/integrations/greenn/status", (req, res) => {
 });
 
 // ============================================================
+// INTEGRACAO GOOGLE CALENDAR + MEET (v4.21) - OAuth 2.0
+// ============================================================
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "";
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "";
+const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI || ""; // ex: http://localhost:3000/oauth/google/callback
+const GOOGLE_TOKENS_FILE = process.env.GOOGLE_TOKENS_FILE || path.join(__dirname, "data", "google-tokens.json");
+const GOOGLE_SCOPES = [
+  "https://www.googleapis.com/auth/calendar.events",
+  "https://www.googleapis.com/auth/calendar.readonly",
+  "https://www.googleapis.com/auth/userinfo.email",
+  "https://www.googleapis.com/auth/userinfo.profile"
+].join(" ");
+
+function googleLoadTokens() { try { return JSON.parse(require("fs").readFileSync(GOOGLE_TOKENS_FILE, "utf8")); } catch { return null; } }
+function googleSaveTokens(t) { try { require("fs").writeFileSync(GOOGLE_TOKENS_FILE, JSON.stringify(t || null, null, 2)); } catch (e) { console.error("[google tokens]", e?.message); } }
+function googleConfigured() { return !!(GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET); }
+function googleRedirectUri(req) { return GOOGLE_REDIRECT_URI || `${req.protocol}://${req.get("host")}/oauth/google/callback`; }
+
+async function googleRefreshAccessToken() {
+  const t = googleLoadTokens();
+  if (!t || !t.refresh_token) throw new Error("sem refresh_token (reconecte)");
+  const r = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: GOOGLE_CLIENT_ID,
+      client_secret: GOOGLE_CLIENT_SECRET,
+      refresh_token: t.refresh_token,
+      grant_type: "refresh_token"
+    })
+  });
+  const d = await r.json();
+  if (!r.ok) throw new Error(`refresh falhou: ${d.error_description || d.error || r.status}`);
+  const next = {
+    ...t,
+    access_token: d.access_token,
+    expires_at: Date.now() + (Number(d.expires_in) || 3600) * 1000,
+    // refresh_token pode vir novo ou ficar o mesmo
+    refresh_token: d.refresh_token || t.refresh_token
+  };
+  googleSaveTokens(next);
+  return next;
+}
+
+async function googleApiFetch(urlPath, opts = {}) {
+  let t = googleLoadTokens();
+  if (!t || !t.access_token) throw new Error("nao conectado");
+  if (!t.expires_at || t.expires_at < Date.now() + 30 * 1000) {
+    t = await googleRefreshAccessToken();
+  }
+  const url = urlPath.startsWith("http") ? urlPath : `https://www.googleapis.com${urlPath}`;
+  const headers = { "Authorization": `Bearer ${t.access_token}`, "Content-Type": "application/json", ...(opts.headers || {}) };
+  let r = await fetch(url, { ...opts, headers });
+  if (r.status === 401) {
+    // token invalido, tenta refresh 1x
+    t = await googleRefreshAccessToken();
+    headers["Authorization"] = `Bearer ${t.access_token}`;
+    r = await fetch(url, { ...opts, headers });
+  }
+  return r;
+}
+
+// --- Rotas OAuth ---
+app.get("/oauth/google/authorize", (req, res) => {
+  if (!googleConfigured()) {
+    return res.status(400).send(`<h2>Google nao configurado</h2>
+      <p>Configure as variaveis de ambiente GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET.</p>
+      <p>Veja docs/GOOGLE_SETUP.md no repo pra criar no Google Cloud Console.</p>`);
+  }
+  const state = crypto.randomBytes(16).toString("hex");
+  res.cookie?.("google_oauth_state", state, { httpOnly: true, maxAge: 10 * 60 * 1000 });
+  const params = new URLSearchParams({
+    client_id: GOOGLE_CLIENT_ID,
+    redirect_uri: googleRedirectUri(req),
+    response_type: "code",
+    scope: GOOGLE_SCOPES,
+    access_type: "offline",
+    prompt: "consent",
+    state,
+    include_granted_scopes: "true"
+  });
+  res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params}`);
+});
+
+app.get("/oauth/google/callback", async (req, res) => {
+  try {
+    if (!googleConfigured()) return res.status(400).send("Google nao configurado");
+    const { code, error } = req.query;
+    if (error) return res.status(400).send(`<h3>Google recusou: ${error}</h3>`);
+    if (!code) return res.status(400).send("sem code");
+    const r = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        code: String(code),
+        client_id: GOOGLE_CLIENT_ID,
+        client_secret: GOOGLE_CLIENT_SECRET,
+        redirect_uri: googleRedirectUri(req),
+        grant_type: "authorization_code"
+      })
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error_description || d.error || `HTTP ${r.status}`);
+    // Busca info do usuario
+    let userInfo = {};
+    try {
+      const u = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", { headers: { Authorization: `Bearer ${d.access_token}` } });
+      userInfo = await u.json();
+    } catch (e) {}
+    const tokens = {
+      access_token: d.access_token,
+      refresh_token: d.refresh_token,
+      expires_at: Date.now() + (Number(d.expires_in) || 3600) * 1000,
+      scope: d.scope,
+      token_type: d.token_type,
+      email: userInfo.email || null,
+      name: userInfo.name || null,
+      picture: userInfo.picture || null,
+      connected_at: Date.now()
+    };
+    googleSaveTokens(tokens);
+    res.send(`<html><body style="font-family:sans-serif;background:#0d0d0d;color:#e9edef;padding:40px;text-align:center">
+      <h2 style="color:#C8A84B">✅ Conectado!</h2>
+      <p>Sua conta Google <strong>${userInfo.email || "?"}</strong> foi conectada.</p>
+      <p>Pode fechar esta janela e voltar pro CRM.</p>
+      <script>setTimeout(function(){window.close();},3000);</script>
+    </body></html>`);
+  } catch (e) {
+    console.error("[google callback]", e?.message);
+    res.status(500).send(`<h3>Erro: ${e?.message || e}</h3>`);
+  }
+});
+
+app.post("/api/integrations/google/disconnect", (req, res) => {
+  const t = googleLoadTokens();
+  if (t && t.access_token) {
+    // Revoga no Google (best-effort)
+    fetch(`https://oauth2.googleapis.com/revoke?token=${t.access_token}`, { method: "POST" }).catch(() => {});
+  }
+  googleSaveTokens(null);
+  res.json({ ok: true });
+});
+
+app.get("/api/integrations/google/status", (req, res) => {
+  const t = googleLoadTokens();
+  res.json({
+    ok: true,
+    configured: googleConfigured(),
+    connected: !!(t && t.access_token),
+    email: t?.email || null,
+    name: t?.name || null,
+    picture: t?.picture || null,
+    expiresAt: t?.expires_at || null,
+    connectedAt: t?.connected_at || null,
+    authorizeUrl: googleConfigured() ? "/oauth/google/authorize" : null,
+    redirectUri: googleRedirectUri(req)
+  });
+});
+
+// Listar eventos do calendario primary
+app.get("/api/integrations/google/events", async (req, res) => {
+  try {
+    const timeMin = req.query.from || new Date().toISOString();
+    const timeMax = req.query.to || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    const maxResults = Math.min(Number(req.query.limit) || 20, 100);
+    const params = new URLSearchParams({
+      timeMin, timeMax, maxResults: String(maxResults),
+      singleEvents: "true", orderBy: "startTime"
+    });
+    const r = await googleApiFetch(`/calendar/v3/calendars/primary/events?${params}`);
+    const d = await r.json();
+    if (!r.ok) return res.status(r.status).json({ ok: false, error: d.error?.message || d.error || "erro google" });
+    const items = (d.items || []).map(e => ({
+      id: e.id,
+      summary: e.summary,
+      description: e.description,
+      start: e.start?.dateTime || e.start?.date,
+      end: e.end?.dateTime || e.end?.date,
+      htmlLink: e.htmlLink,
+      meetLink: e.conferenceData?.entryPoints?.find(x => x.entryPointType === "video")?.uri || e.hangoutLink || null,
+      attendees: (e.attendees || []).map(a => ({ email: a.email, name: a.displayName, status: a.responseStatus })),
+      status: e.status,
+      created: e.created
+    }));
+    res.json({ ok: true, count: items.length, items });
+  } catch (e) {
+    console.error("[google events list]", e?.message);
+    res.status(500).json({ ok: false, error: e?.message });
+  }
+});
+
+// Criar evento (com opcional Meet link automatico)
+app.post("/api/integrations/google/events", async (req, res) => {
+  try {
+    const { summary, description, start, end, durationMin, attendees, withMeet, phone, chatId } = req.body || {};
+    if (!summary) return res.status(400).json({ ok: false, error: "summary obrigatorio" });
+    if (!start) return res.status(400).json({ ok: false, error: "start obrigatorio (ISO)" });
+    const startDate = new Date(start);
+    if (isNaN(startDate.getTime())) return res.status(400).json({ ok: false, error: "start invalido" });
+    const endDate = end ? new Date(end) : new Date(startDate.getTime() + (Number(durationMin) || 60) * 60 * 1000);
+    if (isNaN(endDate.getTime())) return res.status(400).json({ ok: false, error: "end invalido" });
+
+    const body = {
+      summary: String(summary),
+      description: description ? String(description) : undefined,
+      start: { dateTime: startDate.toISOString(), timeZone: "America/Sao_Paulo" },
+      end:   { dateTime: endDate.toISOString(),   timeZone: "America/Sao_Paulo" },
+      attendees: Array.isArray(attendees) ? attendees.filter(a => a && a.email).map(a => ({ email: a.email, displayName: a.displayName })) : undefined
+    };
+    // Meet link automatico
+    if (withMeet) {
+      body.conferenceData = {
+        createRequest: {
+          requestId: "speakers-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8),
+          conferenceSolutionKey: { type: "hangoutsMeet" }
+        }
+      };
+    }
+    // Metadata extra (nao indexavel pela API Google, mas retorna)
+    if (phone || chatId) {
+      body.extendedProperties = {
+        private: {
+          crmPhone: phone ? String(phone) : "",
+          crmChatId: chatId ? String(chatId) : ""
+        }
+      };
+    }
+    const qs = withMeet ? "?conferenceDataVersion=1&sendUpdates=all" : "?sendUpdates=all";
+    const r = await googleApiFetch(`/calendar/v3/calendars/primary/events${qs}`, {
+      method: "POST", body: JSON.stringify(body)
+    });
+    const d = await r.json();
+    if (!r.ok) return res.status(r.status).json({ ok: false, error: d.error?.message || d.error || "erro google" });
+    res.json({
+      ok: true,
+      event: {
+        id: d.id,
+        summary: d.summary,
+        start: d.start?.dateTime,
+        end: d.end?.dateTime,
+        htmlLink: d.htmlLink,
+        meetLink: d.conferenceData?.entryPoints?.find(x => x.entryPointType === "video")?.uri || d.hangoutLink || null,
+        attendees: (d.attendees || []).map(a => a.email),
+        description: d.description
+      }
+    });
+  } catch (e) {
+    console.error("[google event create]", e?.message);
+    res.status(500).json({ ok: false, error: e?.message });
+  }
+});
+
+app.delete("/api/integrations/google/events/:id", async (req, res) => {
+  try {
+    const r = await googleApiFetch(`/calendar/v3/calendars/primary/events/${encodeURIComponent(req.params.id)}?sendUpdates=all`, { method: "DELETE" });
+    if (!r.ok && r.status !== 204) {
+      const d = await r.json().catch(() => ({}));
+      return res.status(r.status).json({ ok: false, error: d.error?.message || `HTTP ${r.status}` });
+    }
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e?.message });
+  }
+});
+
+// ============================================================
 // INTEGRACAO KIWIFY (v4.20) - webhook + token + SSE
 // ============================================================
 const KIWIFY_FILE = process.env.KIWIFY_FILE || path.join(__dirname, "data", "kiwify-events.json");

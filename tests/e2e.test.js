@@ -643,6 +643,58 @@ async function run(){
     expect(jr.rules.length >= 5, "5+ regras default Kiwify");
   }
 
+  console.log("\n== Teste: Google OAuth + Calendar (v4.21) ==");
+  {
+    const base = `http://127.0.0.1:${CRM_PORT}`;
+    // Status sem config
+    const r0 = await fetch(`${base}/api/integrations/google/status`);
+    const j0 = await r0.json();
+    expect(j0.ok === true, "status endpoint");
+    expect(j0.configured === false, "configured=false quando env nao setado");
+    expect(j0.connected === false, "connected=false inicialmente");
+    expect(typeof j0.redirectUri === 'string' && j0.redirectUri.includes('/oauth/google/callback'), "redirectUri exposto");
+
+    // Authorize sem config retorna instrucoes
+    const r1 = await fetch(`${base}/oauth/google/authorize`, { redirect: 'manual' });
+    expect(r1.status === 400, "authorize sem config -> 400");
+    const body1 = await r1.text();
+    expect(body1.includes("GOOGLE_CLIENT_ID"), "mostra instrucao pra configurar env");
+
+    // Callback sem code -> 400
+    const r2 = await fetch(`${base}/oauth/google/callback`);
+    expect(r2.status === 400, "callback sem code -> 400");
+
+    // Disconnect idempotente
+    const r3 = await fetch(`${base}/api/integrations/google/disconnect`, { method: 'POST' });
+    const j3 = await r3.json();
+    expect(j3.ok === true, "disconnect sempre retorna ok");
+
+    // Events/create sem conectar -> 500 (nao conectado)
+    const r4 = await fetch(`${base}/api/integrations/google/events`);
+    const j4 = await r4.json();
+    expect(j4.ok === false && /nao conectado|not connected/.test(j4.error || ''), "events sem conexao -> erro claro");
+
+    // Create sem campos obrigatorios -> 400
+    const r5 = await fetch(`${base}/api/integrations/google/events`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({})
+    });
+    const j5 = await r5.json();
+    expect(j5.ok === false, "create sem campos -> erro");
+  }
+
+  console.log("\n== Teste: Frontend Google (v4.21) ==");
+  {
+    const r = await fetch(`http://127.0.0.1:${CRM_PORT}/app`);
+    const html = await r.text();
+    expect(html.includes("fetchGoogleStatus"), "Google: fetchGoogleStatus");
+    expect(html.includes("function googleConnect"), "Google: googleConnect");
+    expect(html.includes("function googleCreateEvent"), "Google: googleCreateEvent");
+    expect(html.includes("📅 Google"), "Google: aba");
+    expect(html.includes("Google Calendar API"), "Google: docs inline mencionam API");
+    expect(html.includes("/oauth/google/authorize"), "Google: link OAuth");
+    expect(html.includes("withMeet"), "Google: opcao Meet link");
+  }
+
   console.log("\n== Teste: Hotmart webhook v2 (v4.19) ==");
   {
     const base = `http://127.0.0.1:${CRM_PORT}`;
