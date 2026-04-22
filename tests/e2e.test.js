@@ -382,6 +382,47 @@ async function run(){
     expect(Array.isArray(m.days7) && m.days7.length === 7, "serie 7 dias");
   }
 
+  console.log("\n== Teste: Greenn filtros + CSV + retry (v4.16) ==");
+  {
+    const base = `http://127.0.0.1:${CRM_PORT}`;
+    // Dispara variados
+    await fetch(`${base}/api/webhook/greenn`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ data: { customer: { name: 'Filtro1', phone: '5511444444001' }, product: { name: 'ProdutoA' }, transaction: { status: 'paid', total: 100 } } }) });
+    await fetch(`${base}/api/webhook/greenn`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ data: { customer: { name: 'Filtro2', phone: '5511444444002' }, product: { name: 'ProdutoB' }, transaction: { status: 'abandoned' } } }) });
+    await fetch(`${base}/api/webhook/greenn`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ data: { customer: { name: 'Filtro3', phone: '5511444444003' }, product: { name: 'ProdutoA' }, transaction: { status: 'refused' } } }) });
+    // filtra por status
+    const r1 = await fetch(`${base}/api/integrations/greenn/events?status=paid`);
+    const j1 = await r1.json();
+    expect(j1.items.every(x => x.status === 'paid'), "filtro status paid");
+    // filtra por produto
+    const r2 = await fetch(`${base}/api/integrations/greenn/events?product=ProdutoA`);
+    const j2 = await r2.json();
+    expect(j2.items.every(x => (x.productName || '').includes('ProdutoA')), "filtro produto");
+    // busca por nome
+    const r3 = await fetch(`${base}/api/integrations/greenn/events?search=Filtro2`);
+    const j3 = await r3.json();
+    expect(j3.items.some(x => x.name === 'Filtro2'), "search matchea nome");
+    // CSV
+    const r4 = await fetch(`${base}/api/integrations/greenn/events.csv`);
+    expect(r4.status === 200, "CSV status 200");
+    const ct = r4.headers.get('content-type');
+    expect(ct && ct.includes('text/csv'), "content-type CSV");
+    const csv = await r4.text();
+    expect(csv.startsWith('\uFEFF') || csv.includes('receivedAt'), "CSV com header");
+    expect(csv.includes('Filtro1') || csv.includes('Filtro2') || csv.includes('Filtro3'), "CSV contem dados");
+    // Retry em scheduled sent: cria um, aguarda processar? Vamos usar um forced
+    const created = await (await fetch(`${base}/api/scheduled`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone: '5511000000000', message: 'x', sendAt: Date.now() + 3600 * 1000 }) })).json();
+    const retryR = await fetch(`${base}/api/scheduled/${created.item.id}/retry`, { method: 'POST' });
+    // nao vai funcionar pois status ainda eh pending
+    expect(retryR.status === 409, "retry em pending retorna 409");
+    // 404
+    const retry404 = await fetch(`${base}/api/scheduled/sch_inexistente/retry`, { method: 'POST' });
+    expect(retry404.status === 404, "retry inexistente -> 404");
+  }
+
   console.log("\n== Teste: Webhook Greenn (v4.12) ==");
   {
     // Status endpoint

@@ -294,6 +294,12 @@ body{background:var(--bg);color:var(--text);height:100vh;display:flex;overflow:h
 .int-evt-name{font-weight:600;color:var(--text)}
 .int-evt-meta{font-size:11px;color:var(--text2);margin-top:2px}
 .int-evt-val{color:var(--gold);font-weight:700}
+.int-filters{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center}
+.int-filters select,.int-filters input{background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:7px 11px;color:var(--text);font-size:12px;font-family:inherit}
+.int-filters input{min-width:180px;flex:1}
+.int-filters select:focus,.int-filters input:focus{outline:none;border-color:var(--gold)}
+.int-csv{background:var(--gold);color:#111;border:none;border-radius:6px;padding:8px 14px;cursor:pointer;font-weight:700;font-size:12px;text-decoration:none;display:inline-flex;align-items:center;gap:6px}
+.int-csv:hover{background:#f4d03f}
 .rules-list{display:flex;flex-direction:column;gap:8px;margin-bottom:14px}
 .rule-row{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:12px 14px}
 .rule-head{display:flex;align-items:center;gap:10px;cursor:pointer}
@@ -1296,12 +1302,40 @@ async function fetchGreennStatus(){
     return await r.json();
   }catch(e){ return null; }
 }
-async function fetchGreennEvents(limit){
+async function fetchGreennEvents(limit, q){
   try{
-    var r = await fetch('/api/integrations/greenn/events?limit='+(limit||50));
+    var qs = 'limit='+(limit||50);
+    if(q){
+      if(q.status) qs += '&status='+encodeURIComponent(q.status);
+      if(q.product) qs += '&product='+encodeURIComponent(q.product);
+      if(q.search) qs += '&search='+encodeURIComponent(q.search);
+    }
+    var r = await fetch('/api/integrations/greenn/events?'+qs);
     var d = await r.json();
-    return d.items || [];
-  }catch(e){ return []; }
+    return { items: d.items || [], total: d.total||0, count: d.count||0 };
+  }catch(e){ return { items: [], total: 0, count: 0 }; }
+}
+
+// v4.16: filtros + csv
+var _greennFilters = { status:'', product:'', search:'' };
+function greennFilterChange(field, value){
+  _greennFilters[field] = value;
+  // Debounce pra input de texto
+  clearTimeout(window._greennFilterTimer);
+  window._greennFilterTimer = setTimeout(function(){
+    renderIntegracoesPage(document.getElementById('main'));
+  }, field==='status' ? 0 : 300);
+}
+function greennFiltersClear(){
+  _greennFilters = { status:'', product:'', search:'' };
+  renderIntegracoesPage(document.getElementById('main'));
+}
+function greennCsvUrl(){
+  var qs = [];
+  if(_greennFilters.status) qs.push('status='+encodeURIComponent(_greennFilters.status));
+  if(_greennFilters.product) qs.push('product='+encodeURIComponent(_greennFilters.product));
+  if(_greennFilters.search) qs.push('search='+encodeURIComponent(_greennFilters.search));
+  return '/api/integrations/greenn/events.csv'+(qs.length?'?'+qs.join('&'):'');
 }
 
 async function greennRulesFetch(){
@@ -1332,7 +1366,9 @@ function greennRuleSaveFields(status){
 
 async function renderIntegracoesPage(main){
   var st = await fetchGreennStatus();
-  var events = await fetchGreennEvents(30);
+  var _gr = await fetchGreennEvents(100, _greennFilters);
+  var events = _gr.items;
+  var totalAll = _gr.total;
   _greennRulesCache = await greennRulesFetch();
   var rulesHtml = _greennRulesCache.map(function(r){
     var lblMap = {paid:'Aprovada',approved:'Aprovada',refused:'Recusada',declined:'Recusada',failed:'Falhou',refunded:'Reembolsada',abandoned:'Abandonou carrinho',chargedback:'Chargeback',cancelled:'Cancelada',pending:'Pendente',waiting_payment:'Aguardando'};
@@ -1389,7 +1425,19 @@ async function renderIntegracoesPage(main){
       '</div>'+
     '</div>'+
     '<div class="int-events">'+
-      '<h3>Ultimos eventos ('+events.length+')</h3>';
+      '<h3>Eventos '+(totalAll?'('+events.length+' / '+totalAll+' total)':'('+events.length+')')+'</h3>'+
+      '<div class="int-filters">'+
+        '<select onchange="greennFilterChange(\'status\', this.value)">'+
+          '<option value="">Todos status</option>'+
+          ['paid','approved','refused','declined','failed','refunded','chargedback','abandoned','pending'].map(function(s){
+            return '<option value="'+s+'"'+(_greennFilters.status===s?' selected':'')+'>'+esc(s)+'</option>';
+          }).join('')+
+        '</select>'+
+        '<input type="text" placeholder="Filtrar por produto..." value="'+esc(_greennFilters.product)+'" oninput="greennFilterChange(\'product\', this.value)">'+
+        '<input type="text" placeholder="Buscar em nome/telefone/email/tx..." value="'+esc(_greennFilters.search)+'" oninput="greennFilterChange(\'search\', this.value)">'+
+        (_greennFilters.status||_greennFilters.product||_greennFilters.search ? '<button onclick="greennFiltersClear()" style="background:var(--panel2);color:var(--text);border:none;border-radius:6px;padding:7px 12px;cursor:pointer;font-size:12px">Limpar</button>' : '')+
+        '<a class="int-csv" href="'+greennCsvUrl()+'" download>📥 Exportar CSV</a>'+
+      '</div>';
   if(events.length===0){
     html += '<div style="color:var(--text2);text-align:center;padding:24px;font-style:italic">Nenhum evento ainda. Configure o webhook no painel da Greenn pra comecar.</div>';
   } else {

@@ -392,11 +392,79 @@ app.get("/api/integrations/greenn/metrics", (req, res) => {
   res.json({ ok: true, metrics: greennMetrics() });
 });
 
-// Lista eventos recentes (pra UI de Integrações)
+// Lista eventos recentes com filtros (pra UI de Integrações) - v4.16
+function greennFilterEvents(events, q) {
+  q = q || {};
+  const search = String(q.search || '').toLowerCase().trim();
+  const status = String(q.status || '').toLowerCase().trim();
+  const product = String(q.product || '').toLowerCase().trim();
+  const fromTs = Number(q.from) || 0;
+  const toTs = Number(q.to) || Date.now() + 1;
+  return events.filter(ev => {
+    if (status && ev.status !== status) return false;
+    if (product && !String(ev.productName || '').toLowerCase().includes(product)) return false;
+    if (fromTs && ev.receivedAt < fromTs) return false;
+    if (toTs && ev.receivedAt > toTs) return false;
+    if (search) {
+      const hay = [ev.name, ev.phone, ev.email, ev.productName, ev.statusLabel, ev.transactionId, ev.status]
+        .join(' ').toLowerCase();
+      if (!hay.includes(search)) return false;
+    }
+    return true;
+  });
+}
 app.get("/api/integrations/greenn/events", (req, res) => {
   const arr = greennLoad();
-  const limit = Math.min(Number(req.query.limit) || 50, 200);
-  res.json({ ok: true, count: arr.length, items: arr.slice(-limit).reverse() });
+  const filtered = greennFilterEvents(arr, req.query);
+  const limit = Math.min(Number(req.query.limit) || 50, 500);
+  res.json({ ok: true, total: arr.length, count: filtered.length, items: filtered.slice(-limit).reverse() });
+});
+
+// v4.16: Export CSV
+app.get("/api/integrations/greenn/events.csv", (req, res) => {
+  const arr = greennLoad();
+  const filtered = greennFilterEvents(arr, req.query).slice().reverse();
+  const esc = v => {
+    if (v === null || v === undefined) return '';
+    const s = String(v);
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+  const cols = ['receivedAt', 'status', 'statusLabel', 'name', 'phone', 'email', 'productName', 'total', 'currency', 'transactionId', 'event'];
+  const lines = [cols.join(',')];
+  filtered.forEach(ev => {
+    const iso = ev.receivedAt ? new Date(ev.receivedAt).toISOString() : '';
+    lines.push([iso, esc(ev.status), esc(ev.statusLabel), esc(ev.name), esc(ev.phone), esc(ev.email), esc(ev.productName), esc(ev.total), esc(ev.currency), esc(ev.transactionId), esc(ev.event)].join(','));
+  });
+  const csv = lines.join('\n');
+  const today = new Date().toISOString().slice(0, 10);
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="greenn-events-${today}.csv"`);
+  res.send('\uFEFF' + csv); // BOM pra Excel abrir com utf-8
+});
+
+// v4.16: Retry manual de agendamento que falhou (dispara de novo)
+app.post("/api/scheduled/:id/retry", async (req, res) => {
+  const arr = schedLoad();
+  const idx = arr.findIndex(x => x.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ ok: false, error: "nao encontrado" });
+  if (!['failed', 'sent'].includes(arr[idx].status)) return res.status(409).json({ ok: false, error: "so pode retry em failed/sent" });
+  const orig = arr[idx];
+  const clone = {
+    id: schedNewId(),
+    phone: orig.phone,
+    message: orig.message,
+    note: orig.note + ' (retry de ' + orig.id + ')',
+    sendAt: Date.now() + 5000, // dispara em 5s
+    status: 'pending',
+    createdAt: Date.now(),
+    sentAt: null,
+    error: null,
+    source: orig.source || 'manual-retry',
+    retryOf: orig.id
+  };
+  arr.push(clone);
+  schedSave(arr);
+  res.json({ ok: true, item: clone });
 });
 
 // Status da config (sem revelar token)
