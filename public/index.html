@@ -86,6 +86,14 @@ body{background:var(--bg);color:var(--text);height:100vh;display:flex;overflow:h
 .pi-tx{flex:1;font-size:14px;font-weight:500}
 .pi-ct{font-size:11px;color:var(--gold);background:var(--gold3);padding:2px 9px;border-radius:10px;font-weight:700}
 
+/* Quick Actions Grid (v4.2 painel direito Waseller-style) */
+.qa-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:4px}
+.qa-btn{display:flex;flex-direction:column;align-items:center;gap:5px;padding:11px 4px;background:var(--panel2);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:11px;font-weight:500;cursor:pointer;transition:all .15s;text-align:center}
+.qa-btn:hover{background:var(--gold3);border-color:var(--gold);color:var(--gold);transform:translateY(-1px)}
+.qa-btn .qa-ic{font-size:18px;line-height:1}
+.qa-btn.danger:hover{background:#3a1a1a;border-color:#ef4444;color:#ef4444}
+.qa-btn.toggled{background:var(--gold3);border-color:var(--gold);color:var(--gold)}
+
 /* CONV LIST */
 #cl{flex:1;overflow-y:auto}
 #cl::-webkit-scrollbar{width:4px}
@@ -283,12 +291,17 @@ body{background:var(--bg);color:var(--text);height:100vh;display:flex;overflow:h
     <div class="rcb"><span class="spill open" id="rp-st">Aberta</span></div>
   </div>
   <div class="rps">
-    <div class="rpt">AÃÃES</div>
-    <button class="actb res" onclick="resolverConv()"> Resolver</button>
-    <button class="actb trf" onclick="openModal('mtrf')">â¡ Transferir</button>
-    <button class="actb bot" id="btn-bot" onclick="toggleBot()">ð¤ Ativar Bot</button>
-    <button class="actb" onclick="arquivar()" style="margin-top:6px">📦 Arquivar / Desarquivar</button>
-    <button class="actb" onclick="trancar()">🔒 Trancar / Destrancar</button>
+    <div class="rpt">AÇÕES RÁPIDAS</div>
+    <div class="qa-grid">
+      <button class="qa-btn" onclick="resolverConv()" title="Marcar como resolvida"><span class="qa-ic">✓</span><span>Resolver</span></button>
+      <button class="qa-btn" onclick="openModal('mtrf')" title="Transferir conversa"><span class="qa-ic">⇄</span><span>Transferir</span></button>
+      <button class="qa-btn" onclick="arquivar()" id="qa-arch" title="Arquivar / desarquivar"><span class="qa-ic">📦</span><span>Arquivar</span></button>
+      <button class="qa-btn" onclick="trancar()" id="qa-lock" title="Trancar / destrancar"><span class="qa-ic">🔒</span><span>Trancar</span></button>
+      <button class="qa-btn" onclick="copiarInfoContato()" title="Copiar info do contato"><span class="qa-ic">📋</span><span>Copiar</span></button>
+      <button class="qa-btn" onclick="lembreteRapido()" title="Criar lembrete"><span class="qa-ic">⏰</span><span>Lembrete</span></button>
+      <button class="qa-btn" id="btn-bot" onclick="toggleBot()" title="Ativar bot IA nesta conversa"><span class="qa-ic">🤖</span><span>Bot IA</span></button>
+      <button class="qa-btn danger" onclick="excluirConv()" title="Excluir conversa"><span class="qa-ic">🗑️</span><span>Excluir</span></button>
+    </div>
   </div>
   <div class="rps">
     <div class="rpt">TAGS <button onclick="addTag()">+ Add</button></div>
@@ -740,7 +753,24 @@ function renderRP(id){
     qrs.appendChild(d);
   });
   var bb=document.getElementById('btn-bot');
-  if(bb)bb.innerHTML=(botAtivo[id]||c.ag==='bot')?'ð¤ Desativar Bot':'ð¤ Ativar Bot';
+  if(bb){
+    var botActive=(botAtivo[id]||c.ag==='bot');
+    bb.classList.toggle('toggled', botActive);
+    var lbl=bb.querySelector('span:last-child');
+    if(lbl) lbl.textContent = botActive ? 'Bot ON' : 'Bot IA';
+  }
+  var qa=document.getElementById('qa-arch');
+  if(qa){
+    var isArch=(typeof isArchived==='function')&&isArchived(id);
+    qa.classList.toggle('toggled', isArch);
+    var l1=qa.querySelector('span:last-child'); if(l1) l1.textContent=isArch?'Desarquivar':'Arquivar';
+  }
+  var ql=document.getElementById('qa-lock');
+  if(ql){
+    var isLk=(typeof isLocked==='function')&&isLocked(id);
+    ql.classList.toggle('toggled', isLk);
+    var l2=ql.querySelector('span:last-child'); if(l2) l2.textContent=isLk?'Destrancar':'Trancar';
+  }
 }
 
 function resolverConv(){
@@ -754,6 +784,50 @@ function toggleBot(){
   if(botAtivo[cur])convs[cur].ag='bot';renderRP(cur);
   var bg=document.getElementById('msgs');
   addBub({r:'note',t:'Bot '+(botAtivo[cur]?'ATIVADO':'DESATIVADO'),ts:h()},bg);if(bg)bg.scrollTop=bg.scrollHeight;
+}
+
+
+function copiarInfoContato(){
+  if(!cur||!convs[cur])return;
+  var c=convs[cur];
+  var info=c.nm+(c.ph?' - '+c.ph:'')+(c.dept?' ('+c.dept+')':'');
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(info).then(function(){
+      if(typeof toast==='function') toast('Info copiada: '+info);
+    }).catch(function(){ alert('Info: '+info); });
+  } else { alert('Info: '+info); }
+}
+
+function lembreteRapido(){
+  if(!cur||!convs[cur])return;
+  var min=prompt('Lembrar em quantos minutos? (ex: 15)','30');
+  if(!min) return;
+  var n=parseInt(min,10); if(isNaN(n)||n<1){ alert('Numero invalido'); return; }
+  var msg=prompt('Texto do lembrete:','Responder '+convs[cur].nm);
+  if(!msg) return;
+  var name=convs[cur].nm;
+  setTimeout(function(){
+    if(typeof toast==='function') toast('LEMBRETE ['+name+']: '+msg);
+    else alert('LEMBRETE ['+name+']: '+msg);
+  }, n*60*1000);
+  if(typeof toast==='function') toast('Lembrete agendado pra daqui '+n+' min');
+}
+
+function excluirConv(){
+  if(!cur||!convs[cur])return;
+  if(!confirm('Excluir conversa "'+convs[cur].nm+'"? Esta acao nao pode ser desfeita nesta versao.')) return;
+  var id=cur;
+  delete convs[id];
+  if(typeof impFlags==='object'&&impFlags){
+    impFlags.archived=(impFlags.archived||[]).filter(function(x){return x!==id;});
+    impFlags.locked=(impFlags.locked||[]).filter(function(x){return x!==id;});
+    if(typeof flagsSave==='function') flagsSave();
+  }
+  cur=null;
+  document.getElementById('right').style.display='none';
+  if(typeof showEmpty==='function') showEmpty();
+  if(typeof renderSB==='function') renderSB();
+  if(typeof toast==='function') toast('Conversa excluida');
 }
 
 function notaRapida(){
