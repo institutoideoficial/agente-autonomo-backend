@@ -287,6 +287,14 @@ async function run(){
     expect(html.includes("dragover"), "Kanban: handler dragover");
     expect(html.includes("'drop'"), "Kanban: handler drop");
     expect(html.includes("Em atendimento"), "Kanban: coluna nova");
+    // Dashboard v4.5
+    expect(html.includes("function computeMetrics"), "Dashboard: computeMetrics");
+    expect(html.includes("function renderKPIBar"), "Dashboard: renderKPIBar");
+    expect(html.includes('id="kpi-bar"'), "Dashboard: KPI bar container");
+    expect(html.includes("dash-grid"), "Dashboard: grid de cards");
+    expect(html.includes("Por departamento"), "Dashboard: secao departamento");
+    expect(html.includes("Por etiqueta"), "Dashboard: secao etiqueta");
+    expect(html.includes("avgRespMin"), "Dashboard: tempo medio resposta");
   }
 
   console.log("\n== Teste: GET / serve welcome.html ==");

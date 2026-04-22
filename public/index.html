@@ -146,6 +146,33 @@ body{background:var(--bg);color:var(--text);height:100vh;display:flex;overflow:h
 .kb-card-tag.suporte{background:#2d1f3a;color:var(--purple)}
 .kb-empty{text-align:center;padding:24px 12px;color:var(--text2);font-size:11px;font-style:italic}
 
+/* MINI KPIs (v4.5) */
+.kpi-bar{display:grid;grid-template-columns:1fr 1fr 1fr;gap:1px;background:var(--border);border-bottom:1px solid var(--border);flex-shrink:0}
+.kpi{background:var(--sb);padding:8px 4px;text-align:center;cursor:pointer;transition:background .15s}
+.kpi:hover{background:var(--panel2)}
+.kpi-val{font-size:18px;font-weight:800;color:var(--gold);line-height:1}
+.kpi-lbl{font-size:9px;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);margin-top:3px;font-weight:600}
+
+/* DASHBOARD page (v4.5) */
+.dash{padding:24px;overflow-y:auto;height:100%;background:var(--bg)}
+.dash h2{font-size:22px;margin-bottom:18px;display:flex;align-items:center;gap:10px}
+.dash-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-bottom:24px}
+.dash-card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:18px}
+.dash-card .dc-lbl{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text2);margin-bottom:8px;font-weight:600}
+.dash-card .dc-val{font-size:32px;font-weight:800;color:var(--gold);line-height:1;margin-bottom:4px}
+.dash-card .dc-hint{font-size:11px;color:var(--text2)}
+.dash-card.accent-green .dc-val{color:#10b981}
+.dash-card.accent-red .dc-val{color:#ef4444}
+.dash-card.accent-blue .dc-val{color:var(--blue)}
+.dash-card.accent-purple .dc-val{color:var(--purple)}
+.dash-section{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:14px}
+.dash-section h3{font-size:14px;font-weight:700;margin-bottom:12px;color:var(--text)}
+.dash-bar{display:flex;align-items:center;gap:10px;margin-bottom:8px;font-size:12px}
+.dash-bar-lbl{width:100px;color:var(--text2);flex-shrink:0}
+.dash-bar-fill{flex:1;height:18px;background:var(--panel2);border-radius:9px;overflow:hidden;position:relative}
+.dash-bar-fill > div{height:100%;background:var(--gold);transition:width .4s}
+.dash-bar-num{font-weight:700;color:var(--text);min-width:30px;text-align:right}
+
 /* CONV LIST */
 #cl{flex:1;overflow-y:auto}
 #cl::-webkit-scrollbar{width:4px}
@@ -319,6 +346,7 @@ body{background:var(--bg);color:var(--text);height:100vh;display:flex;overflow:h
     </div>
     <div id="wst">Desconectado</div>
   </div>
+  <div class="kpi-bar" id="kpi-bar"></div>
   <div class="sb-pills" id="pills"></div>
   <div class="sb-srch">
     <div class="srch-w">
@@ -753,6 +781,57 @@ function renderPills(){
   el.appendChild(add);
 }
 
+function computeMetrics(){
+  var all = window.convs ? Object.values(window.convs) : [];
+  var inbox = all.filter(function(c){
+    if(typeof isArchived==='function' && isArchived(c.id)) return false;
+    if(typeof isLocked==='function' && isLocked(c.id)) return false;
+    return true;
+  });
+  var hoje = new Date().toDateString();
+  var resolvHoje = inbox.filter(function(c){ return c.st==='resolved'; }).length;
+  // tempo medio de resposta = media das diferencas entre msgs in -> out (sequenciais)
+  var diffs = [];
+  inbox.forEach(function(c){
+    var prev = null;
+    (c.msgs||[]).forEach(function(m){
+      if(prev && (prev.r==='u') && (m.r==='out'||m.r==='a')){
+        // Aproximacao: se ts existe, parse HH:MM
+        if(prev.ts && m.ts){
+          var p = prev.ts.split(':').map(Number);
+          var n = m.ts.split(':').map(Number);
+          var d = (n[0]*60+n[1]) - (p[0]*60+p[1]);
+          if(d>=0 && d<=180) diffs.push(d);
+        }
+      }
+      prev = m;
+    });
+  });
+  var avgResp = diffs.length ? Math.round(diffs.reduce(function(a,b){return a+b;},0)/diffs.length) : 0;
+  return {
+    total: inbox.length,
+    abertas: inbox.filter(function(c){return c.st==='open';}).length,
+    pendentes: inbox.filter(function(c){return c.st==='pending';}).length,
+    resolvidas: resolvHoje,
+    arquivadas: all.filter(function(c){return typeof isArchived==='function' && isArchived(c.id);}).length,
+    trancadas: all.filter(function(c){return typeof isLocked==='function' && isLocked(c.id);}).length,
+    fixadas: all.filter(function(c){return typeof isPinned==='function' && isPinned(c.id);}).length,
+    silenciadas: all.filter(function(c){return typeof isMuted==='function' && isMuted(c.id);}).length,
+    avgRespMin: avgResp,
+    msgsHoje: inbox.reduce(function(s,c){return s + (c.msgs||[]).length;}, 0),
+    porDept: (function(){ var d={}; inbox.forEach(function(c){var k=c.dept||'(sem)'; d[k]=(d[k]||0)+1;}); return d; })(),
+    porTag:  (function(){ var d={}; inbox.forEach(function(c){if(c.tag){d[c.tag]=(d[c.tag]||0)+1;}}); return d; })()
+  };
+}
+function renderKPIBar(){
+  var el = document.getElementById('kpi-bar'); if(!el) return;
+  var m = computeMetrics();
+  el.innerHTML =
+    '<div class="kpi" onclick="setPill(\'open\')" title="Conversas abertas"><div class="kpi-val">'+m.abertas+'</div><div class="kpi-lbl">Abertas</div></div>'+
+    '<div class="kpi" onclick="setPill(\'pending\')" title="Pendentes"><div class="kpi-val">'+m.pendentes+'</div><div class="kpi-lbl">Pendentes</div></div>'+
+    '<div class="kpi" onclick="navTo(\'reports\')" title="Resolvidas hoje"><div class="kpi-val">'+m.resolvidas+'</div><div class="kpi-lbl">Resolvidas</div></div>';
+}
+
 function renderSB(){
   var cl=document.getElementById('cl');if(!cl) return;
   cl.innerHTML='';
@@ -783,6 +862,7 @@ function renderSB(){
   });
   renderPills();
   renderPinned();
+  if(typeof renderKPIBar==='function') renderKPIBar();
 }
 // shims legados (v4.1 ainda chama setTab/setFilter de outros lugares)
 function setTab(t){ if(t==='all')setPill('all'); else if(t==='open')setPill('open'); else if(t==='resolved')setPill('resolved'); else setPill('all'); }
@@ -1243,18 +1323,46 @@ function renderContacts(main){
 }
 
 function renderReports(main){
-  var t=Object.keys(convs).length;
-  var op=Object.values(convs).filter(function(c){return c.st==='open';}).length;
-  var rs=Object.values(convs).filter(function(c){return c.st==='resolved';}).length;
-  var ms=Object.values(convs).reduce(function(s,c){return s+c.msgs.length;},0);
-  main.style.cssText='padding:18px;overflow-y:auto;flex:1;display:block;max-width:700px';
-  main.innerHTML='<h2 style="margin-bottom:16px;font-size:18px">📊 Relatorios</h2>'+
-    '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:20px">'+
-    [['Total',t,'var(--gold)'],['Abertas',op,'var(--green)'],['Resolvidas',rs,'var(--blue)'],['Mensagens',ms,'var(--yellow)'],['Satisfacao','98%','var(--purple)'],['Resp. Medio','<2min','var(--red)']].map(function(r){
-      return '<div style="background:var(--panel);border-radius:10px;padding:15px;border-left:3px solid '+r[2]+'"><div style="font-size:26px;font-weight:700;color:'+r[2]+'">'+r[1]+'</div><div style="font-size:12px;color:var(--text2);margin-top:3px">'+r[0]+'</div></div>';
-    }).join('')+'</div>';
-  main.innerHTML+='<div style="background:var(--panel);border-radius:10px;padding:14px"><div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:11px">Por Agente</div>'+
-    Object.entries(AGENTES).map(function(e){var cnt=Object.values(convs).filter(function(c){return c.ag===e[0];}).length;return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)"><span style="font-size:13px">'+e[1]+'</span><span style="font-size:13px;font-weight:600;color:var(--gold)">'+cnt+' conversas</span></div>';}).join('')+'</div>';
+  var m = computeMetrics();
+  function bar(label, count, max, color){
+    var pct = max>0 ? Math.round(count/max*100) : 0;
+    return '<div class="dash-bar"><div class="dash-bar-lbl">'+esc(label)+'</div>'+
+           '<div class="dash-bar-fill"><div style="width:'+pct+'%;background:'+(color||'var(--gold)')+'"></div></div>'+
+           '<div class="dash-bar-num">'+count+'</div></div>';
+  }
+  var deptMax = Math.max.apply(Math, [1].concat(Object.values(m.porDept)));
+  var tagMax  = Math.max.apply(Math, [1].concat(Object.values(m.porTag)));
+  var html = '<div class="dash">'+
+    '<h2>📊 Dashboard</h2>'+
+    '<div class="dash-grid">'+
+      '<div class="dash-card"><div class="dc-lbl">Total inbox</div><div class="dc-val">'+m.total+'</div><div class="dc-hint">conversas ativas (sem arquivadas)</div></div>'+
+      '<div class="dash-card accent-green"><div class="dc-lbl">Abertas</div><div class="dc-val">'+m.abertas+'</div><div class="dc-hint">aguardando voce responder</div></div>'+
+      '<div class="dash-card"><div class="dc-lbl">Pendentes</div><div class="dc-val" style="color:#f59e0b">'+m.pendentes+'</div><div class="dc-hint">aguardando algo do contato</div></div>'+
+      '<div class="dash-card accent-blue"><div class="dc-lbl">Resolvidas</div><div class="dc-val">'+m.resolvidas+'</div><div class="dc-hint">marcadas como resolvidas</div></div>'+
+      '<div class="dash-card accent-purple"><div class="dc-lbl">Tempo medio de resposta</div><div class="dc-val">'+(m.avgRespMin||'—')+'<span style="font-size:14px;color:var(--text2)"> min</span></div><div class="dc-hint">media entre msg recebida e enviada</div></div>'+
+      '<div class="dash-card"><div class="dc-lbl">Mensagens trocadas</div><div class="dc-val">'+m.msgsHoje+'</div><div class="dc-hint">total no inbox</div></div>'+
+      '<div class="dash-card accent-red"><div class="dc-lbl">Arquivadas</div><div class="dc-val">'+m.arquivadas+'</div><div class="dc-hint">fora do inbox principal</div></div>'+
+      '<div class="dash-card"><div class="dc-lbl">Trancadas</div><div class="dc-val">'+m.trancadas+'</div><div class="dc-hint">conversas privadas</div></div>'+
+      '<div class="dash-card"><div class="dc-lbl">Fixadas no topo</div><div class="dc-val">'+m.fixadas+'</div><div class="dc-hint">prioridade visual</div></div>'+
+    '</div>'+
+    '<div class="dash-section">'+
+      '<h3>Por departamento</h3>'+
+      Object.keys(m.porDept).sort().map(function(k){return bar(k, m.porDept[k], deptMax, 'var(--gold)');}).join('') ||
+      '<div style="color:var(--text2);font-size:12px">Sem dados</div>'+
+    '</div>'+
+    '<div class="dash-section">'+
+      '<h3>Por etiqueta</h3>'+
+      (Object.keys(m.porTag).length ?
+        Object.keys(m.porTag).sort().map(function(k){
+          var color = k==='venda'?'#10b981':k==='lead'?'var(--blue)':k==='urgente'?'#ef4444':k==='suporte'?'var(--purple)':'var(--gold)';
+          return bar(k, m.porTag[k], tagMax, color);
+        }).join('')
+        : '<div style="color:var(--text2);font-size:12px">Sem etiquetas</div>'
+      )+
+    '</div>'+
+  '</div>';
+  main.style.cssText = '';
+  main.innerHTML = html;
 }
 
 function renderConfig(main){
