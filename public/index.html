@@ -314,7 +314,7 @@ body{background:var(--bg);color:var(--text);height:100vh;display:flex;overflow:h
   <div class="rps">
     <div class="rpt">AGENTE</div>
     <select class="asel" id="asel" onchange="setAgente(this.value)">
-      <option value="bot">ð¤ Bot IA</option>
+      <option value="bot">🤖 Bot IA</option>
       <option value="thiago">Thiago Labastie</option>
       <option value="vanessa">Vanessa Labastie</option>
     </select>
@@ -322,7 +322,7 @@ body{background:var(--bg);color:var(--text);height:100vh;display:flex;overflow:h
   <div class="rps">
     <div class="rpt">NOTA INTERNA</div>
     <textarea class="ni" id="ni" placeholder="Nota sobre este contato......"></textarea>
-    <button class="snb" onclick="salvarNota()">ð¾ Salvar</button>
+    <button class="snb" onclick="salvarNota()">💾 Salvar</button>
   </div>
   <div class="rps">
     <div class="rpt">RESPOSTAS RÃPIDAS</div>
@@ -402,7 +402,7 @@ var cur=null,qi=null,curTab='all',curFilter='all',botAtivo={};
 var COLORS=['#1d3557','#2d6a4f','#6a0572','#3a86ff','#c77dff','#e07b39','#2a9d8f','#d62828'];
 var AGENTES={bot:'Bot IA',thiago:'Thiago Labastie',vanessa:'Vanessa Labastie'};
 var QRS=[
-  {n:'SaudaÃ§Ã£o',t:'Ola! Obrigado por entrar em contato. Como posso ajudar?'},
+  {n:'Saudacao',t:'Ola! Obrigado por entrar em contato. Como posso ajudar?'},
   {n:'Aguardar',t:'Aguarde um momento, vou verificar isso para voce!'},
   {n:'Horario',t:'Nosso horario e segunda a sexta das 8h as 18h.'},
   {n:'Encerramento',t:'Muito obrigado pelo contato! Qualquer duvida estamos a disposicao.'}
@@ -674,12 +674,12 @@ function renderChat(id){
     '</div></div>'+
     '<div id="msgs"></div>'+
     '<div class="ch-ft"><div class="ft-acts">'+
-    '<button class="fab" onclick="usarQR()">â¡ Rapida</button>'+
-    '<button class="fab" onclick="notaRapida()">ð Nota</button>'+
-    '<button class="fab">ð Arquivo</button>'+
+    '<button class="fab" onclick="usarQR()">⚡ Rapida</button>'+
+    '<button class="fab" onclick="notaRapida()">📝 Nota</button>'+
+    '<button class="fab">📎 Arquivo</button>'+
     '</div>'+
     '<div class="ft-row"><textarea id="minp" placeholder="Digite uma mensagem..." rows="1"></textarea>'+
-    '<button id="sbtn" onclick="enviar()">â¤</button>'+
+    '<button id="sbtn" onclick="enviar()">➤</button>'+
     '</div></div>';
   var mi=document.getElementById('minp');
   mi.addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();enviar();}});
@@ -702,7 +702,7 @@ function addBub(m,bg){
   d.className='mw'+(out?' out':'');
   var cls='mb '+(note?'note':out?'out':'in');
   var tick=out?'<span class="mk"></span>':'';
-  var pre=note?'ð ':'';
+  var pre=note?'📝 ':'';
   d.innerHTML='<div class="'+cls+'">'+pre+esc(m.t)+'<div class="mm"><span class="mt">'+m.ts+'</span>'+tick+'</div></div>';
   bg.appendChild(d);
 }
@@ -760,7 +760,7 @@ function renderRP(id){
   var qrs=document.getElementById('qrs');qrs.innerHTML='';
   QRS.forEach(function(q){
     var d=document.createElement('div');d.className='qri';
-    d.innerHTML='<div class="qrn">'+s.n+'</div><div style="font-size:12px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+s.t+ '</div>';
+    d.innerHTML='<div class="qrn">'+esc(q.n)+'</div><div style="font-size:12px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(q.t)+'</div>';
     d.onclick=function(){usarQR(q.t);};
     qrs.appendChild(d);
   });
@@ -1004,7 +1004,7 @@ function renderReports(main){
   var rs=Object.values(convs).filter(function(c){return c.st==='resolved';}).length;
   var ms=Object.values(convs).reduce(function(s,c){return s+c.msgs.length;},0);
   main.style.cssText='padding:18px;overflow-y:auto;flex:1;display:block;max-width:700px';
-  main.innerHTML='<h2 style="margin-bottom:16px;font-size:18px">ð Relatorios</h2>'+
+  main.innerHTML='<h2 style="margin-bottom:16px;font-size:18px">📊 Relatorios</h2>'+
     '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:20px">'+
     [['Total',t,'var(--gold)'],['Abertas',op,'var(--green)'],['Resolvidas',rs,'var(--blue)'],['Mensagens',ms,'var(--yellow)'],['Satisfacao','98%','var(--purple)'],['Resp. Medio','<2min','var(--red)']].map(function(r){
       return '<div style="background:var(--panel);border-radius:10px;padding:15px;border-left:3px solid '+r[2]+'"><div style="font-size:26px;font-weight:700;color:'+r[2]+'">'+r[1]+'</div><div style="font-size:12px;color:var(--text2);margin-top:3px">'+r[0]+'</div></div>';
@@ -1015,7 +1015,7 @@ function renderReports(main){
 
 function renderConfig(main){
   main.style.cssText='padding:18px;overflow-y:auto;flex:1;display:block;max-width:560px';
-  main.innerHTML='<h2 style="margin-bottom:16px;font-size:18px">â Configuracoes</h2>'+
+  main.innerHTML='<h2 style="margin-bottom:16px;font-size:18px">⚙ Configuracoes</h2>'+
     '<div style="background:var(--panel);border-radius:10px;padding:14px;margin-bottom:11px"><div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:11px">Bot IA</div>'+
     '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)"><span style="font-size:13px">Resposta automatica</span><div style="width:34px;height:19px;background:var(--gold);border-radius:10px;cursor:pointer;position:relative"><div style="position:absolute;width:15px;height:15px;background:#fff;border-radius:50%;top:2px;left:17px;transition:left .2s"></div></div></div>'+
     '</div>'+

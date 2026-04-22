@@ -215,6 +215,59 @@ async function run(){
     expect(!html.includes("Marcos Oliveira"), "contato demo Marcos removido");
   }
 
+  console.log("\n== Teste: UI Waseller v4.2 (6 mudancas visuais) ==");
+  {
+    const r = await fetch(`http://127.0.0.1:${CRM_PORT}/app`);
+    const html = await r.text();
+    // #1 Filtros pill customizaveis
+    expect(html.includes('id="pills"'), "#1 container pills presente");
+    expect(html.includes("pillsBuiltIn"), "#1 array pillsBuiltIn presente");
+    expect(html.includes("IMP_PILLS_KEY"), "#1 localStorage pills definido");
+    expect(html.includes("renderPills()"), "#1 funcao renderPills presente");
+    // #2 Trancadas + Arquivadas
+    expect(html.includes('id="sb-pinned"'), "#2 container sb-pinned presente");
+    expect(html.includes("function arquivar"), "#2 funcao arquivar presente");
+    expect(html.includes("function trancar"), "#2 funcao trancar presente");
+    expect(html.includes("IMP_FLAGS_KEY"), "#2 localStorage flags definido");
+    expect(html.includes("Conversas trancadas"), "#2 label trancadas presente");
+    expect(html.includes("Arquivadas"), "#2 label arquivadas presente");
+    // #3 Sidebar 12 icones
+    const navMatches = html.match(/<button class="nav-btn"[^>]*id="nav-/g) || [];
+    expect(navMatches.length >= 11, "#3 sidebar com 11+ nav-btn (era 5)"); // 1 active + 11 nao-active
+    expect(html.includes('id="nav-agenda"'), "#3 nav agenda");
+    expect(html.includes('id="nav-tags"'), "#3 nav tags");
+    expect(html.includes('id="nav-templates"'), "#3 nav templates");
+    expect(html.includes('id="nav-disparos"'), "#3 nav disparos");
+    expect(html.includes('id="nav-integ"'), "#3 nav integracoes");
+    expect(html.includes('id="nav-lixeira"'), "#3 nav lixeira");
+    expect(html.includes('id="nav-notif"'), "#3 nav notificacoes");
+    expect(html.includes("PLACEHOLDERS"), "#3 mapa de placeholders das features novas");
+    expect(html.includes("renderPlaceholder"), "#3 funcao renderPlaceholder");
+    // #4 Painel direito quick actions
+    expect(html.includes("qa-grid"), "#4 grid de quick actions");
+    expect(html.includes('class="qa-btn"'), "#4 botoes qa-btn");
+    expect(html.includes("function copiarInfoContato"), "#4 funcao copiar info");
+    expect(html.includes("function lembreteRapido"), "#4 funcao lembrete");
+    expect(html.includes("function excluirConv"), "#4 funcao excluir");
+    // #5 Header chat com 7 botoes SVG
+    expect(html.includes("function favoritarConv"), "#5 funcao favoritar");
+    expect(html.includes("function silenciarConv"), "#5 funcao silenciar");
+    expect(html.includes("function traduzirChat"), "#5 funcao traduzir");
+    expect(html.includes("function encerrarChat"), "#5 funcao encerrar");
+    expect(html.includes("isPinned"), "#5 helper isPinned");
+    expect(html.includes("isMuted"), "#5 helper isMuted");
+    // #6 Background doodle dourado no canvas
+    expect(html.includes("background-image:url"), "#6 background-image inline");
+    expect(html.includes("%23C8A84B") || html.includes("#C8A84B"), "#6 cor dourada no SVG");
+    // Bug fix renderRP: garante que nao tem mais s.n / s.t (era q.n / q.t)
+    expect(!html.includes("'+s.n+'"), "bugfix renderRP: s.n -> q.n");
+    expect(!html.includes("'+s.t+"), "bugfix renderRP: s.t -> q.t");
+    // Mojibake check: nao deve ter mais bytes double-encoded comuns
+    expect(!html.includes("ð¤"), "mojibake 🤖 corrigido");
+    expect(!html.includes("ð¾"), "mojibake 💾 corrigido");
+    expect(!html.includes("â¡ Rapida"), "mojibake ⚡ corrigido");
+  }
+
   console.log("\n== Teste: GET / serve welcome.html ==");
   {
     const r = await fetch(`http://127.0.0.1:${CRM_PORT}/`);
