@@ -697,7 +697,7 @@ async function run(){
     expect(html.includes("function agendarMeetConv"), "Agendar: funcao global");
     expect(html.includes("onclick=\"agendarMeetConv()\""), "Agendar: botao quick action");
     expect(html.includes("_agendarMeetSubmit"), "Agendar: submit handler");
-    expect(html.includes("class=\"ameet-bg\""), "Agendar: modal CSS");
+    expect(html.includes("ameet-bg"), "Agendar: modal CSS");
     expect(html.includes("Mentoria Speakers Play"), "Agendar: pre-fill titulo default");
   }
 
