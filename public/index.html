@@ -366,6 +366,29 @@ body{background:var(--bg);color:var(--text);height:100vh;display:flex;overflow:h
 .rule-actions button{background:var(--panel2);color:var(--text);border:none;border-radius:6px;padding:7px 14px;cursor:pointer;font-size:12px}
 .rule-actions button.primary{background:var(--gold);color:#111;font-weight:700}
 
+/* AGENDAR MEET MODAL (v4.22) */
+.ameet-bg{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.65);z-index:99998;display:flex;align-items:center;justify-content:center;padding:20px}
+.ameet{background:var(--panel);border:1px solid var(--gold3);border-radius:12px;max-width:540px;width:100%;padding:22px;box-shadow:0 20px 50px rgba(0,0,0,.5);max-height:90vh;overflow-y:auto}
+.ameet h3{font-size:18px;margin-bottom:4px;display:flex;align-items:center;gap:8px}
+.ameet .sub{color:var(--text2);font-size:12px;margin-bottom:16px}
+.ameet .field{margin-bottom:10px}
+.ameet label{font-size:11px;color:var(--text2);display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px;font-weight:600}
+.ameet input,.ameet textarea{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:9px 11px;color:var(--text);font-size:13px;font-family:inherit;box-sizing:border-box}
+.ameet textarea{min-height:60px;resize:vertical}
+.ameet input:focus,.ameet textarea:focus{outline:none;border-color:var(--gold)}
+.ameet .row{display:flex;gap:8px}
+.ameet .row > .field{flex:1}
+.ameet .checkbox{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text);cursor:pointer;margin:6px 0}
+.ameet .actions{display:flex;gap:8px;justify-content:flex-end;margin-top:14px}
+.ameet button{border:none;border-radius:6px;padding:10px 18px;cursor:pointer;font-weight:600;font-size:13px}
+.ameet button.primary{background:#34a853;color:#fff}
+.ameet button.primary:hover{background:#2e8e48}
+.ameet button.primary:disabled{opacity:.6;cursor:wait}
+.ameet button.cancel{background:var(--panel2);color:var(--text)}
+.ameet button.cancel:hover{background:#3a3a3a}
+.ameet-result{background:var(--gold3);border-radius:6px;padding:11px 13px;margin-top:12px;font-size:13px;line-height:1.5}
+.ameet-result a{color:var(--gold);font-weight:700;word-break:break-all}
+
 /* CONV LIST */
 #cl{flex:1;overflow-y:auto}
 #cl::-webkit-scrollbar{width:4px}
@@ -578,6 +601,7 @@ body{background:var(--bg);color:var(--text);height:100vh;display:flex;overflow:h
       <button class="qa-btn" onclick="copiarInfoContato()" title="Copiar info do contato"><span class="qa-ic">📋</span><span>Copiar</span></button>
       <button class="qa-btn" onclick="lembreteRapido()" title="Criar lembrete"><span class="qa-ic">⏰</span><span>Lembrete</span></button>
       <button class="qa-btn" id="btn-bot" onclick="toggleBot()" title="Ativar bot IA nesta conversa"><span class="qa-ic">🤖</span><span>Bot IA</span></button>
+      <button class="qa-btn" onclick="agendarMeetConv()" title="Criar evento Google Calendar + Meet pra esta conversa"><span class="qa-ic">📅</span><span>Agendar</span></button>
       <button class="qa-btn danger" onclick="excluirConv()" title="Excluir conversa"><span class="qa-ic">🗑️</span><span>Excluir</span></button>
     </div>
   </div>
@@ -2485,6 +2509,133 @@ function encerrarChat(){
   document.getElementById('right').style.display='none';
   if(typeof showEmpty==='function') showEmpty();
   document.querySelectorAll('.ci').forEach(function(e){e.classList.remove('active');});
+}
+
+function agendarMeetConv(){
+  if(!cur||!convs[cur]){ alert('Selecione uma conversa primeiro'); return; }
+  var c = convs[cur];
+
+  // Default: amanha as 10:00, 60 min
+  var pad = function(n){ return String(n).padStart(2,'0'); };
+  var d = new Date(); d.setDate(d.getDate()+1); d.setHours(10,0,0,0);
+  var defLocal = d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T'+pad(d.getHours())+':'+pad(d.getMinutes());
+  var primeiroNome = (c.nm||'').split(' ')[0] || 'aluno(a)';
+  var defTitle = 'Mentoria Speakers Play - '+c.nm;
+  var defDesc = 'Mentoria 1:1 com '+c.nm+(c.ph?'\nWhatsApp: '+c.ph:'')+(c.nota?'\n\nNota interna: '+c.nota:'');
+  // Tenta extrair email dos eventos de integracao
+  var defEmail = '';
+  if(Array.isArray(c.greennHistory)){
+    for(var i=c.greennHistory.length-1;i>=0;i--){
+      if(c.greennHistory[i].email){ defEmail = c.greennHistory[i].email; break; }
+    }
+  }
+
+  // Checa status do Google
+  fetchGoogleStatus().then(function(st){
+    if(!st || !st.configured){
+      if(confirm('Google ainda nao esta configurado no servidor.\n\nAbrir a aba Integracoes > Google pra configurar?')){
+        navTo('integ'); intPlatformSet('google');
+      }
+      return;
+    }
+    if(!st.connected){
+      if(confirm('Voce precisa conectar sua conta Google primeiro.\n\nAbrir a tela de conexao?')){
+        navTo('integ'); intPlatformSet('google');
+      }
+      return;
+    }
+    // Abre modal
+    var bg = document.createElement('div');
+    bg.className = 'ameet-bg';
+    bg.innerHTML =
+      '<div class="ameet" onclick="event.stopPropagation()">'+
+        '<h3>📅 Agendar evento com '+esc(primeiroNome)+'</h3>'+
+        '<div class="sub">Cria evento na sua agenda Google conectada ('+esc(st.email||'?')+') + gera link Meet. Convidado recebe por email se informado.</div>'+
+        '<div class="field"><label>Título</label><input type="text" id="ameet-title" value="'+esc(defTitle)+'"></div>'+
+        '<div class="row">'+
+          '<div class="field"><label>Data e hora</label><input type="datetime-local" id="ameet-when" value="'+defLocal+'"></div>'+
+          '<div class="field" style="max-width:120px"><label>Duração (min)</label><input type="number" id="ameet-dur" value="60" min="15" max="480" step="15"></div>'+
+        '</div>'+
+        '<div class="field"><label>Email do convidado</label><input type="email" id="ameet-email" value="'+esc(defEmail)+'" placeholder="aluno@exemplo.com (opcional)"></div>'+
+        '<div class="field"><label>Descrição / pauta</label><textarea id="ameet-desc">'+esc(defDesc)+'</textarea></div>'+
+        '<label class="checkbox"><input type="checkbox" id="ameet-meet" checked> Criar link Google Meet automático</label>'+
+        '<label class="checkbox"><input type="checkbox" id="ameet-note" checked> Adicionar nota na conversa com o link do evento</label>'+
+        '<div id="ameet-result"></div>'+
+        '<div class="actions">'+
+          '<button class="cancel" onclick="document.querySelector(\'.ameet-bg\').remove()">Cancelar</button>'+
+          '<button class="primary" id="ameet-go" onclick="_agendarMeetSubmit()">Criar evento</button>'+
+        '</div>'+
+      '</div>';
+    bg.onclick = function(e){ if(e.target===bg) bg.remove(); };
+    document.body.appendChild(bg);
+    setTimeout(function(){ document.getElementById('ameet-title').focus(); }, 50);
+  }).catch(function(){
+    alert('Nao foi possivel consultar o status do Google. Verifique se o servidor esta rodando.');
+  });
+}
+
+async function _agendarMeetSubmit(){
+  var btn = document.getElementById('ameet-go');
+  var title = document.getElementById('ameet-title').value.trim();
+  var when = document.getElementById('ameet-when').value;
+  var dur = Number(document.getElementById('ameet-dur').value)||60;
+  var email = document.getElementById('ameet-email').value.trim();
+  var desc = document.getElementById('ameet-desc').value.trim();
+  var withMeet = document.getElementById('ameet-meet').checked;
+  var addNote = document.getElementById('ameet-note').checked;
+  if(!title){ alert('Titulo obrigatorio'); return; }
+  if(!when){ alert('Data/hora obrigatoria'); return; }
+  var start = new Date(when).toISOString();
+  var attendees = email ? [{email:email, displayName: (convs[cur]||{}).nm || email}] : [];
+  btn.disabled = true; btn.textContent = 'Criando...';
+  try{
+    var r = await fetch('/api/integrations/google/events', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        summary: title, description: desc,
+        start: start, durationMin: dur,
+        attendees: attendees, withMeet: withMeet,
+        phone: (convs[cur]||{}).ph,
+        chatId: (convs[cur]||{}).chatId
+      })
+    });
+    var d = await r.json();
+    if(!d.ok){
+      document.getElementById('ameet-result').innerHTML = '<div class="ameet-result" style="background:#3a1a1a;color:#ef4444">❌ Erro: '+esc(d.error||'desconhecido')+'</div>';
+      btn.disabled = false; btn.textContent = 'Criar evento';
+      return;
+    }
+    // Sucesso
+    var ev = d.event || {};
+    var meetHtml = ev.meetLink
+      ? '🎥 <a href="'+esc(ev.meetLink)+'" target="_blank">'+esc(ev.meetLink)+'</a>'
+      : '(sem Meet link)';
+    var calHtml = ev.htmlLink ? ' · <a href="'+esc(ev.htmlLink)+'" target="_blank" style="color:var(--gold)">abrir no Calendar</a>' : '';
+    document.getElementById('ameet-result').innerHTML =
+      '<div class="ameet-result">✅ Evento criado!<br>'+meetHtml+calHtml+'</div>';
+    // Adiciona nota na conversa
+    if(addNote && convs[cur]){
+      var dt = new Date(start).toLocaleString('pt-BR');
+      var note = '📅 Evento agendado: '+title+' em '+dt+(ev.meetLink?' · Meet: '+ev.meetLink:'');
+      convs[cur].msgs.push({r:'note', t:note, ts: new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})});
+      if(typeof renderMsgs==='function') renderMsgs(cur);
+      if(typeof renderSB==='function') renderSB();
+    }
+    // Copia Meet link pro clipboard se houver
+    if(ev.meetLink && navigator.clipboard){
+      navigator.clipboard.writeText(ev.meetLink).then(function(){
+        if(typeof toast==='function') toast('Meet link copiado!');
+      }).catch(function(){});
+    }
+    if(typeof toast==='function') toast('📅 Evento criado!');
+    setTimeout(function(){
+      var bg = document.querySelector('.ameet-bg');
+      if(bg) bg.remove();
+    }, 2500);
+  }catch(e){
+    document.getElementById('ameet-result').innerHTML = '<div class="ameet-result" style="background:#3a1a1a;color:#ef4444">❌ '+esc(e.message||e)+'</div>';
+    btn.disabled = false; btn.textContent = 'Criar evento';
+  }
 }
 
 function copiarInfoContato(){

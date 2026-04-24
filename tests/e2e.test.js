@@ -693,6 +693,12 @@ async function run(){
     expect(html.includes("Google Calendar API"), "Google: docs inline mencionam API");
     expect(html.includes("/oauth/google/authorize"), "Google: link OAuth");
     expect(html.includes("withMeet"), "Google: opcao Meet link");
+    // v4.22 Agendar Meet dentro da conversa
+    expect(html.includes("function agendarMeetConv"), "Agendar: funcao global");
+    expect(html.includes("onclick=\"agendarMeetConv()\""), "Agendar: botao quick action");
+    expect(html.includes("_agendarMeetSubmit"), "Agendar: submit handler");
+    expect(html.includes("class=\"ameet-bg\""), "Agendar: modal CSS");
+    expect(html.includes("Mentoria Speakers Play"), "Agendar: pre-fill titulo default");
   }
 
   console.log("\n== Teste: Hotmart webhook v2 (v4.19) ==");
