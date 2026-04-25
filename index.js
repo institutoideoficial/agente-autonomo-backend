@@ -78,6 +78,18 @@ app.post("/api/send-message", async (req, res) => {
     const { phone, message } = req.body;
     if (!phone || !message) return res.status(400).json({ error: "phone e message sao obrigatorios" });
     const clean = String(phone).replace(/\D/g, "");
+
+    // v4.23: se Cloud API configurada, usa ela. Senao, Bravos (whatsapp-web.js).
+    if (process.env.WA_CLOUD_TOKEN && process.env.WA_CLOUD_PHONE_ID) {
+      try {
+        const result = await waCloudSendMessage(clean, message);
+        return res.json({ ok: true, source: "wa-cloud", messageId: result.messages?.[0]?.id, raw: result });
+      } catch (e) {
+        return res.status(500).json({ ok: false, source: "wa-cloud", error: e?.message });
+      }
+    }
+
+    // Fallback Bravos
     const chatId = clean.includes("@") ? clean : `${clean}@c.us`;
     const r = await fetch(`${BRAVOS_URL}/send-message`, {
       method: "POST",
@@ -88,7 +100,7 @@ app.post("/api/send-message", async (req, res) => {
       body: JSON.stringify({ chatId, message: String(message) })
     });
     const data = await r.json();
-    res.status(r.status).json(data);
+    res.status(r.status).json({ source: "bravos", ...data });
   } catch (e) {
     res.status(500).json({ error: e?.message });
   }
@@ -477,6 +489,164 @@ app.get("/api/integrations/greenn/status", (req, res) => {
     eventsCount: greennLoad().length,
     storageFile: GREENN_FILE
   });
+});
+
+// ============================================================
+// INTEGRACAO WHATSAPP CLOUD API (v4.23) - Meta oficial
+// ============================================================
+const WA_CLOUD_TOKEN = process.env.WA_CLOUD_TOKEN || "";
+const WA_CLOUD_PHONE_ID = process.env.WA_CLOUD_PHONE_ID || "";
+const WA_CLOUD_VERIFY_TOKEN = process.env.WA_CLOUD_VERIFY_TOKEN || "imperador-verify-2026";
+const WA_CLOUD_API_VERSION = process.env.WA_CLOUD_API_VERSION || "v20.0";
+const WA_CLOUD_FILE = process.env.WA_CLOUD_FILE || path.join(__dirname, "data", "wa-cloud-events.json");
+const WA_CLOUD_MAX = 200;
+
+function waCloudLoad() { try { return JSON.parse(require("fs").readFileSync(WA_CLOUD_FILE, "utf8")); } catch { return []; } }
+function waCloudSave(arr) { try { require("fs").writeFileSync(WA_CLOUD_FILE, JSON.stringify(arr.slice(-WA_CLOUD_MAX), null, 2)); } catch (e) { console.error("[wa-cloud]", e?.message); } }
+function waCloudConfigured() { return !!(WA_CLOUD_TOKEN && WA_CLOUD_PHONE_ID); }
+
+// GET /api/webhook/wa-cloud - handshake do Meta
+app.get("/api/webhook/wa-cloud", (req, res) => {
+  const mode = req.query["hub.mode"];
+  const token = req.query["hub.verify_token"];
+  const challenge = req.query["hub.challenge"];
+  if (mode === "subscribe" && token === WA_CLOUD_VERIFY_TOKEN) {
+    console.log("[wa-cloud] webhook verificado");
+    return res.status(200).send(challenge);
+  }
+  return res.status(403).send("Forbidden");
+});
+
+// POST /api/webhook/wa-cloud - recebe mensagens
+app.post("/api/webhook/wa-cloud", (req, res) => {
+  try {
+    const body = req.body || {};
+    // Meta envia: { entry: [{ changes: [{ value: { messages, contacts, statuses } }] }] }
+    const entry = (body.entry || [])[0];
+    const change = (entry?.changes || [])[0];
+    const value = change?.value || {};
+    const messages = value.messages || [];
+    const contacts = value.contacts || [];
+    const statuses = value.statuses || [];
+    const arr = waCloudLoad();
+
+    // Processa mensagens recebidas
+    messages.forEach(msg => {
+      const from = msg.from; // numero do remetente
+      const contact = contacts.find(c => c.wa_id === from) || {};
+      const name = contact.profile?.name || from;
+      let text = "";
+      if (msg.type === "text") text = msg.text?.body || "";
+      else if (msg.type === "image") text = "[imagem]" + (msg.image?.caption ? " " + msg.image.caption : "");
+      else if (msg.type === "audio") text = "[audio]";
+      else if (msg.type === "video") text = "[video]" + (msg.video?.caption ? " " + msg.video.caption : "");
+      else if (msg.type === "document") text = "[documento]";
+      else if (msg.type === "location") text = "[localizacao]";
+      else if (msg.type === "sticker") text = "[sticker]";
+      else text = "[" + msg.type + "]";
+
+      const evt = {
+        type: "message_in",
+        receivedAt: Date.now(),
+        from: from,
+        name: name,
+        text: text,
+        msgType: msg.type,
+        messageId: msg.id,
+        timestamp: msg.timestamp,
+        raw: msg
+      };
+      arr.push(evt);
+
+      // Broadcast SSE no formato compativel (igual Bravos)
+      broadcastSSE({
+        type: "message_in",
+        data: {
+          chat_id: from + "@c.us",
+          from_id: from,
+          body: text,
+          type: msg.type,
+          from_me: 0,
+          direction: "in",
+          timestamp: msg.timestamp ? Number(msg.timestamp) * 1000 : Date.now(),
+          pushname: name,
+          message_id: msg.id
+        },
+        clientId: "wa-cloud",
+        timestamp: Date.now()
+      });
+    });
+
+    // Processa status (delivered/read/failed)
+    statuses.forEach(s => {
+      arr.push({
+        type: "status",
+        receivedAt: Date.now(),
+        messageId: s.id,
+        recipient: s.recipient_id,
+        status: s.status,
+        timestamp: s.timestamp,
+        raw: s
+      });
+      broadcastSSE({
+        type: "wa_cloud_status",
+        data: { messageId: s.id, recipient: s.recipient_id, status: s.status, timestamp: s.timestamp }
+      });
+    });
+
+    waCloudSave(arr);
+    res.status(200).send("OK");
+  } catch (e) {
+    console.error("[wa-cloud webhook]", e?.message);
+    res.status(500).json({ ok: false, error: e?.message });
+  }
+});
+
+// Envia mensagem via Cloud API
+async function waCloudSendMessage(phone, message) {
+  if (!waCloudConfigured()) throw new Error("Cloud API nao configurada");
+  const cleanPhone = String(phone).replace(/\D/g, "");
+  const r = await fetch(`https://graph.facebook.com/${WA_CLOUD_API_VERSION}/${WA_CLOUD_PHONE_ID}/messages`, {
+    method: "POST",
+    headers: { "Authorization": `Bearer ${WA_CLOUD_TOKEN}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      messaging_product: "whatsapp",
+      to: cleanPhone,
+      type: "text",
+      text: { body: String(message) }
+    })
+  });
+  const d = await r.json();
+  if (!r.ok) throw new Error(d.error?.message || `HTTP ${r.status}`);
+  return d;
+}
+
+// Status / config / events / test
+app.get("/api/integrations/wa-cloud/status", (req, res) => {
+  res.json({
+    ok: true,
+    configured: waCloudConfigured(),
+    phoneId: WA_CLOUD_PHONE_ID || null,
+    apiVersion: WA_CLOUD_API_VERSION,
+    webhookUrl: `${req.protocol}://${req.get("host")}/api/webhook/wa-cloud`,
+    verifyToken: WA_CLOUD_VERIFY_TOKEN,
+    eventsCount: waCloudLoad().length
+  });
+});
+app.get("/api/integrations/wa-cloud/events", (req, res) => {
+  const arr = waCloudLoad();
+  const limit = Math.min(Number(req.query.limit) || 50, 500);
+  res.json({ ok: true, count: arr.length, items: arr.slice(-limit).reverse() });
+});
+app.post("/api/integrations/wa-cloud/test", async (req, res) => {
+  try {
+    const { phone, message } = req.body || {};
+    if (!phone || !message) return res.status(400).json({ ok: false, error: "phone e message obrigatorios" });
+    const result = await waCloudSendMessage(phone, message);
+    res.json({ ok: true, result });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e?.message });
+  }
 });
 
 // ============================================================
