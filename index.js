@@ -63,7 +63,7 @@ app.post("/api/bot", async (req, res) => {
 // Status da conexao WhatsApp (Bravos)
 app.get("/api/status/:clientId", async (req, res) => {
   try {
-    const r = await fetch(`${BRAVOS_URL}/health`);
+    const r = await fetch(`${BRAVOS_URL}/health`, { headers: { "bypass-tunnel-reminder": "true", "User-Agent": "imperador-crm" } });
     const data = await r.json();
     const state = data.isReady && data.isAuthenticated ? "connected" : "disconnected";
     res.json({ status: state, state, instance: { status: state, state, ...data } });
@@ -94,7 +94,7 @@ app.post("/api/send-message", async (req, res) => {
     const r = await fetch(`${BRAVOS_URL}/send-message`, {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${BRAVOS_TOKEN}`,
+        "Authorization": `Bearer ${BRAVOS_TOKEN}`, "bypass-tunnel-reminder": "true", "User-Agent": "imperador-crm",
         "Content-Type": "application/json"
       },
       body: JSON.stringify({ chatId, message: String(message) })
