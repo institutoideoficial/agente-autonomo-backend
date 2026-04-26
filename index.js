@@ -233,6 +233,91 @@ function greennRulesLoad() {
 function greennRulesSave(arr) {
   try { fs.writeFileSync(GREENN_RULES_FILE, JSON.stringify(arr || [], null, 2)); } catch (e) { console.error("[greenn rules]", e?.message); }
 }
+// ============================================================
+// GOOGLE AUTO-EVENT (v4.27) - cria evento Calendar quando paid
+// ============================================================
+const GOOGLE_AUTO_EVENT_ENABLED = process.env.GOOGLE_AUTO_EVENT === "true";
+const GOOGLE_AUTO_EVENT_DELAY_HOURS = Number(process.env.GOOGLE_AUTO_EVENT_DELAY_HOURS || 24);
+const GOOGLE_AUTO_EVENT_DURATION_MIN = Number(process.env.GOOGLE_AUTO_EVENT_DURATION_MIN || 30);
+const GOOGLE_AUTO_EVENT_TITLE_TPL = process.env.GOOGLE_AUTO_EVENT_TITLE_TPL || "Welcome - {produto} - {nome}";
+
+async function tryGoogleAutoEvent(norm) {
+  if (!GOOGLE_AUTO_EVENT_ENABLED) return null;
+  if (!norm || norm.status !== "paid") return null;
+  try {
+    const t = googleLoadTokens();
+    if (!t || !t.access_token) {
+      console.log("[google-auto-event] sem tokens - pula");
+      return null;
+    }
+    const startDate = new Date(Date.now() + GOOGLE_AUTO_EVENT_DELAY_HOURS * 60 * 60 * 1000);
+    // arredonda pra hora cheia
+    startDate.setMinutes(0, 0, 0);
+    const endDate = new Date(startDate.getTime() + GOOGLE_AUTO_EVENT_DURATION_MIN * 60 * 1000);
+    const title = GOOGLE_AUTO_EVENT_TITLE_TPL
+      .replace(/\{produto\}/g, norm.productName || "Curso")
+      .replace(/\{nome\}/g, norm.name || "Aluno")
+      .replace(/\{plataforma\}/g, norm.type || "");
+    const valor = norm.total ? `R$ ${Number(norm.total).toFixed(2)}` : "";
+    const description = `Aluno: ${norm.name || "?"}
+WhatsApp: ${norm.phone || "?"}
+Email: ${norm.email || "?"}
+Produto: ${norm.productName || "?"} (${norm.type || "?"})
+Transacao: ${norm.transactionId || "?"} ${valor}
+
+[criado automaticamente pelo CRM Imperador ao receber compra aprovada]`;
+    const body = {
+      summary: title,
+      description,
+      start: { dateTime: startDate.toISOString(), timeZone: "America/Sao_Paulo" },
+      end:   { dateTime: endDate.toISOString(),   timeZone: "America/Sao_Paulo" },
+      attendees: norm.email ? [{ email: norm.email, displayName: norm.name || undefined }] : undefined,
+      conferenceData: {
+        createRequest: {
+          requestId: "imp-auto-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8),
+          conferenceSolutionKey: { type: "hangoutsMeet" }
+        }
+      },
+      extendedProperties: {
+        private: {
+          crmPhone: norm.phone || "",
+          crmSource: norm.type || "",
+          crmTransaction: norm.transactionId || ""
+        }
+      }
+    };
+    const r = await googleApiFetch("/calendar/v3/calendars/primary/events?conferenceDataVersion=1&sendUpdates=all", {
+      method: "POST", body: JSON.stringify(body)
+    });
+    const d = await r.json();
+    if (!r.ok) { console.error("[google-auto-event] erro", d.error?.message || r.status); return null; }
+    const meetLink = d.conferenceData?.entryPoints?.find(x => x.entryPointType === "video")?.uri || d.hangoutLink;
+    console.log(`[google-auto-event] OK ${d.id} -> ${meetLink || d.htmlLink}`);
+    broadcastSSE({
+      type: "google_event_created",
+      data: { eventId: d.id, htmlLink: d.htmlLink, meetLink, summary: d.summary, source: norm.type, phone: norm.phone }
+    });
+    return { id: d.id, htmlLink: d.htmlLink, meetLink };
+  } catch (e) {
+    console.error("[google-auto-event]", e?.message);
+    return null;
+  }
+}
+
+app.get("/api/integrations/google/auto-event/status", (req, res) => {
+  res.json({
+    ok: true,
+    enabled: GOOGLE_AUTO_EVENT_ENABLED,
+    delayHours: GOOGLE_AUTO_EVENT_DELAY_HOURS,
+    durationMin: GOOGLE_AUTO_EVENT_DURATION_MIN,
+    titleTemplate: GOOGLE_AUTO_EVENT_TITLE_TPL,
+    googleConnected: !!(googleLoadTokens()?.access_token),
+    note: GOOGLE_AUTO_EVENT_ENABLED
+      ? "Quando webhook receber status=paid, evento Calendar com Meet eh criado automaticamente."
+      : "Desativado. Setar env GOOGLE_AUTO_EVENT=true e restart pra ativar."
+  });
+});
+
 function expandGreennTemplate(tpl, ev) {
   const first = String(ev.name || '').split(' ')[0] || '';
   const valor = (typeof ev.total === 'number' && ev.total > 0) ? ('R$ ' + ev.total.toFixed(2).replace('.', ',')) : '';
@@ -257,6 +342,7 @@ app.post("/api/webhook/greenn", (req, res) => {
     const arr = greennLoad();
     arr.push(norm);
     greennSave(arr);
+    tryGoogleAutoEvent(norm).catch(()=>{});
 
     // v4.14: aplica regra de auto-follow-up se houver
     let autoScheduledId = null;
@@ -606,6 +692,7 @@ app.post("/api/webhook/generic", (req, res) => {
     }
     const norm = normalizeGenericPayload(req.body, req.query);
     const arr = genericLoad(); arr.push(norm); genericSave(arr);
+    tryGoogleAutoEvent(norm).catch(()=>{});
     broadcastSSE({ type: "generic_event", data: { ...norm, raw: undefined } });
     res.json({ ok: true, normalized: { phone: norm.phone, name: norm.name, status: norm.status, event: norm.event } });
   } catch (e) { console.error("[generic webhook]", e?.message); res.status(500).json({ ok: false, error: e?.message }); }
@@ -615,6 +702,7 @@ app.get("/api/webhook/generic", (req, res) => {
   if (GENERIC_TOKEN && req.query.token !== GENERIC_TOKEN) return res.status(401).json({ ok: false, error: "token invalido" });
   const norm = normalizeGenericPayload({}, req.query);
   const arr = genericLoad(); arr.push(norm); genericSave(arr);
+    tryGoogleAutoEvent(norm).catch(()=>{});
   broadcastSSE({ type: "generic_event", data: { ...norm, raw: undefined } });
   res.json({ ok: true, normalized: { phone: norm.phone, status: norm.status } });
 });
@@ -1164,6 +1252,7 @@ app.post("/api/webhook/kiwify", (req, res) => {
     const arr = kiwifyLoad();
     arr.push(norm);
     kiwifySave(arr);
+    tryGoogleAutoEvent(norm).catch(()=>{});
 
     let autoScheduledId = null;
     try {
@@ -1417,6 +1506,7 @@ app.post("/api/webhook/hotmart", (req, res) => {
     const arr = hotmartLoad();
     arr.push(norm);
     hotmartSave(arr);
+    tryGoogleAutoEvent(norm).catch(()=>{});
 
     let autoScheduledId = null;
     try {
@@ -1692,6 +1782,7 @@ app.post("/api/webhook/eduzz", (req, res) => {
     const arr = eduzzLoad();
     arr.push(norm);
     eduzzSave(arr);
+    tryGoogleAutoEvent(norm).catch(()=>{});
 
     // auto-follow-up
     let autoScheduledId = null;
