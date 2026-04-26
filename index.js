@@ -492,6 +492,79 @@ app.get("/api/integrations/greenn/status", (req, res) => {
 });
 
 // ============================================================
+// IA SUGESTÃO DE RESPOSTA (v4.26) - Claude rascunha, Vanessa revisa
+// ============================================================
+const SPEAKERS_SYSTEM_PROMPT = `Voce eh assistente de WhatsApp da Vanessa Labastie, mentora de oratoria da Speakers Play Academy.
+
+Seu trabalho: SUGERIR um rascunho de resposta breve, calorosa e profissional (max 80 palavras) que a Vanessa pode editar antes de enviar.
+
+Tom: pessoal, calorosa, direta, sem floreios. Como uma mentora gentil falando 1-a-1.
+Contexto da Vanessa:
+- Speakers Play Academy: formacao de oratoria
+- NeuroHeart: metodo proprio
+- Livro: "A Ciencia do Ser Integral"
+- Atende alunos por WhatsApp, sem equipe
+
+Regras:
+- Se o aluno mandou pergunta, responda direto (nao floreie)
+- Se eh uma duvida tecnica que voce nao tem certeza, pergunte mais detalhes
+- Se eh feedback positivo, agradece e estimula compartilhar
+- Sem emojis exagerados (max 1)
+- Termina com algo acionavel (link, proximo passo, pergunta)
+- NUNCA finja ser a Vanessa - voce eh um rascunho pra ela revisar
+- Linguagem simples (PT-BR informal mas educado)`;
+
+app.post("/api/ai/suggest", async (req, res) => {
+  try {
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) {
+      return res.status(503).json({ ok: false, error: "ANTHROPIC_API_KEY nao configurada no servidor. Adicione no .env e restart." });
+    }
+    const { messages, contactName, productContext } = req.body || {};
+    if (!Array.isArray(messages) || messages.length === 0) {
+      return res.status(400).json({ ok: false, error: "messages[] obrigatorio" });
+    }
+    // Limita historico ao ultimo 20 msgs (controla custo + foco)
+    const recent = messages.slice(-20);
+    const conversationContext = recent.map(m => {
+      const who = (m.r === "out" || m.r === "a" || m.fromMe) ? "Vanessa" : (contactName || "Aluno");
+      return `${who}: ${m.t || m.text || m.body || ""}`;
+    }).join("\n");
+
+    const userPrompt = `Historico recente da conversa com ${contactName || "aluno(a)"}${productContext ? ` (comprou: ${productContext})` : ""}:
+
+${conversationContext}
+
+Gere APENAS o rascunho de resposta da Vanessa pra mandar agora (texto puro, sem aspas, sem prefixo "Vanessa:").`;
+
+    const client = new Anthropic({ apiKey });
+    const response = await client.messages.create({
+      model: "claude-haiku-4-5",
+      max_tokens: 300,
+      system: SPEAKERS_SYSTEM_PROMPT,
+      messages: [{ role: "user", content: userPrompt }]
+    });
+    const suggestion = response.content?.[0]?.text?.trim() || "(sem sugestao)";
+    res.json({
+      ok: true,
+      suggestion,
+      tokens: { input: response.usage?.input_tokens || 0, output: response.usage?.output_tokens || 0 }
+    });
+  } catch (e) {
+    console.error("[ai-suggest]", e?.message);
+    res.status(500).json({ ok: false, error: e?.message });
+  }
+});
+
+app.get("/api/ai/status", (req, res) => {
+  res.json({
+    ok: true,
+    configured: !!process.env.ANTHROPIC_API_KEY,
+    model: "claude-haiku-4-5"
+  });
+});
+
+// ============================================================
 // WEBHOOK GENERICO (v4.24) - Zapier/Make/n8n/qualquer
 // ============================================================
 const GENERIC_FILE = process.env.GENERIC_FILE || path.join(__dirname, "data", "generic-events.json");

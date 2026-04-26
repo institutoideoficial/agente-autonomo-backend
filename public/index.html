@@ -2382,6 +2382,7 @@ function renderChat(id){
     '</div></div>'+
     '<div id="msgs"></div>'+
     '<div class="ch-ft"><div class="ft-acts">'+
+    '<button class="fab" onclick="sugerirIA()" id="btn-ia" title="Sugerir resposta com IA (Claude)">✨ IA</button>'+
     '<button class="fab" onclick="usarQR()">⚡ Rapida</button>'+
     '<button class="fab" onclick="notaRapida()">📝 Nota</button>'+
     '<button class="fab">📎 Arquivo</button>'+
@@ -2724,6 +2725,41 @@ async function _agendarMeetSubmit(){
   }catch(e){
     document.getElementById('ameet-result').innerHTML = '<div class="ameet-result" style="background:#3a1a1a;color:#ef4444">❌ '+esc(e.message||e)+'</div>';
     btn.disabled = false; btn.textContent = 'Criar evento';
+  }
+}
+
+async function sugerirIA(){
+  if(!cur||!convs[cur]){ alert('Selecione uma conversa'); return; }
+  var c = convs[cur];
+  var btn = document.getElementById('btn-ia');
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ pensando...'; }
+  try{
+    var lastEvent = (Array.isArray(c.greennHistory)&&c.greennHistory.length) ? c.greennHistory[c.greennHistory.length-1] : null;
+    var productCtx = lastEvent ? (lastEvent.productName + (lastEvent.statusLabel?' - '+lastEvent.statusLabel:'')) : '';
+    var r = await fetch('/api/ai/suggest', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        messages: c.msgs.slice(-20),
+        contactName: c.nm,
+        productContext: productCtx
+      })
+    });
+    var d = await r.json();
+    if(!d.ok){
+      alert('Erro: '+(d.error||'desconhecido')+(d.error&&d.error.includes('ANTHROPIC')?'\\n\\nPra ativar IA, adicione ANTHROPIC_API_KEY no .env do servidor e restart.':''));
+      return;
+    }
+    var inp = document.getElementById('minp');
+    if(inp){
+      inp.value = d.suggestion;
+      inp.style.height='auto'; inp.style.height=Math.min(inp.scrollHeight,110)+'px';
+      inp.focus();
+    }
+    if(typeof toast==='function') toast('✨ Sugestao IA inserida — revisa antes de enviar');
+  }catch(e){
+    alert('Erro: '+e.message);
+  }finally{
+    if(btn){ btn.disabled = false; btn.textContent = '✨ IA'; }
   }
 }
 
