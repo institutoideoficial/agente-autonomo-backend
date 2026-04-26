@@ -651,6 +651,57 @@ app.get("/api/integrations/generic/events", (req, res) => {
 });
 
 // ============================================================
+// INSIGHTS / HEALTH / EXPORT (v4.29)
+// ============================================================
+const SERVER_BOOT_AT = Date.now();
+
+app.get("/api/insights/health", async (req, res) => {
+  try {
+    const fsLib = require('fs');
+    let bravosOk = false, bravosState = null;
+    try {
+      const r = await fetch(`${BRAVOS_URL}/health`, { signal: AbortSignal.timeout(8000), headers: { "bypass-tunnel-reminder": "true", "User-Agent": "imperador-crm" } });
+      const d = await r.json();
+      bravosOk = !!d.isReady;
+      bravosState = { isReady: d.isReady, isAuthenticated: d.isAuthenticated, hasQr: d.hasQr, uptimeSec: d.uptimeSec };
+    } catch (e) { bravosState = { error: e.message }; }
+    function tryLoad(file) { try { return JSON.parse(fsLib.readFileSync(file, 'utf8')); } catch { return []; } }
+    const greenn = tryLoad(GREENN_FILE).length;
+    const eduzz  = tryLoad(EDUZZ_FILE).length;
+    const hotmart= tryLoad(HOTMART_FILE).length;
+    const kiwify = tryLoad(KIWIFY_FILE).length;
+    const generic= tryLoad(GENERIC_FILE).length;
+    const waCloud= tryLoad(WA_CLOUD_FILE).length;
+    const scheduled = (typeof schedLoad === 'function' ? schedLoad() : []);
+    res.json({
+      ok: true,
+      crm: { uptimeSec: Math.round((Date.now() - SERVER_BOOT_AT) / 1000), version: "v4.29", bootAt: new Date(SERVER_BOOT_AT).toISOString() },
+      bravos: { ok: bravosOk, ...bravosState, url: BRAVOS_URL },
+      ai: { configured: !!process.env.ANTHROPIC_API_KEY },
+      google: { configured: !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET), connected: !!(googleLoadTokens()?.access_token), autoEvent: GOOGLE_AUTO_EVENT_ENABLED },
+      events: { total: greenn + eduzz + hotmart + kiwify + generic + waCloud, greenn, eduzz, hotmart, kiwify, generic, waCloud },
+      scheduled: { total: scheduled.length, pending: scheduled.filter(s => s.status === 'pending').length, sent: scheduled.filter(s => s.status === 'sent').length, failed: scheduled.filter(s => s.status === 'failed').length },
+      sse: { connectedClients: sseClients.size }
+    });
+  } catch (e) { res.status(500).json({ ok: false, error: e?.message }); }
+});
+
+app.get("/api/export/all.csv", (req, res) => {
+  try {
+    const fsLib = require('fs');
+    function tryLoad(file) { try { return JSON.parse(fsLib.readFileSync(file, 'utf8')); } catch { return []; } }
+    const all = [];
+    [['greenn', GREENN_FILE], ['eduzz', EDUZZ_FILE], ['hotmart', HOTMART_FILE], ['kiwify', KIWIFY_FILE], ['generic', GENERIC_FILE]]
+      .forEach(([source, f]) => tryLoad(f).forEach(e => all.push({ source, ...e })));
+    all.sort((a, b) => (b.receivedAt || 0) - (a.receivedAt || 0));
+    const csv = platformUtils.eventsToCSV(all, ['receivedAt', 'source', 'event', 'status', 'statusLabel', 'name', 'phone', 'email', 'productName', 'total', 'currency', 'transactionId', 'paymentType', 'installments']);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="imperador-all-events-${new Date().toISOString().slice(0, 10)}.csv"`);
+    res.send(csv);
+  } catch (e) { res.status(500).json({ ok: false, error: e?.message }); }
+});
+
+// ============================================================
 // INTEGRACAO WHATSAPP CLOUD API (v4.23) - Meta oficial
 // ============================================================
 const WA_CLOUD_TOKEN = process.env.WA_CLOUD_TOKEN || "";
