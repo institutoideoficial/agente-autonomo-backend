@@ -2,6 +2,7 @@
 const express = require("express");
 const path = require("path");
 const Anthropic = require("@anthropic-ai/sdk");
+const platformUtils = require('./lib/platform-utils');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -424,67 +425,10 @@ app.put("/api/integrations/greenn/rules", (req, res) => {
 
 // v4.15: agrega metricas dos eventos Greenn (vendas, receita, conversao)
 function greennMetrics() {
-  const all = greennLoad();
-  const now = Date.now();
-  const day = 24 * 60 * 60 * 1000;
-  const startOfDay = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x.getTime(); };
-  const today = startOfDay(now);
-  const week = now - 7 * day;
-  const month = now - 30 * day;
-
-  const bucket = (filterFn) => {
-    const arr = all.filter(filterFn);
-    const paid = arr.filter(x => x.status === "paid" || x.status === "approved");
-    const abandoned = arr.filter(x => x.status === "abandoned" || x.status === "checkoutabandoned");
-    const refused = arr.filter(x => x.status === "refused" || x.status === "declined" || x.status === "failed");
-    const refunded = arr.filter(x => x.status === "refunded" || x.status === "chargedback");
-    const revenue = paid.reduce((s, x) => s + (Number(x.total) || 0), 0);
-    return {
-      total: arr.length,
-      paid: paid.length,
-      abandoned: abandoned.length,
-      refused: refused.length,
-      refunded: refunded.length,
-      revenue: Math.round(revenue * 100) / 100,
-      conversionPct: arr.length ? Math.round((paid.length / arr.length) * 1000) / 10 : 0,
-      avgTicket: paid.length ? Math.round((revenue / paid.length) * 100) / 100 : 0
-    };
-  };
-
-  // Top produtos (aprovados)
-  const paidAll = all.filter(x => (x.status === "paid" || x.status === "approved") && x.productName);
-  const byProduct = {};
-  paidAll.forEach(x => {
-    if (!byProduct[x.productName]) byProduct[x.productName] = { count: 0, revenue: 0 };
-    byProduct[x.productName].count++;
-    byProduct[x.productName].revenue += Number(x.total) || 0;
+  return platformUtils.computeMetrics(greennLoad(), {
+    paidStatuses: ["paid","approved"],
+    abandonedStatuses: ["abandoned","checkoutabandoned"]
   });
-  const topProducts = Object.keys(byProduct)
-    .map(name => ({ name, count: byProduct[name].count, revenue: Math.round(byProduct[name].revenue * 100) / 100 }))
-    .sort((a, b) => b.revenue - a.revenue)
-    .slice(0, 5);
-
-  // Serie temporal ultimos 7 dias (pra mini grafico)
-  const days7 = [];
-  for (let i = 6; i >= 0; i--) {
-    const dStart = startOfDay(now - i * day);
-    const dEnd = dStart + day;
-    const dayPaid = all.filter(x => x.receivedAt >= dStart && x.receivedAt < dEnd && (x.status === "paid" || x.status === "approved"));
-    days7.push({
-      date: new Date(dStart).toISOString().slice(0, 10),
-      vendas: dayPaid.length,
-      receita: Math.round(dayPaid.reduce((s, x) => s + (Number(x.total) || 0), 0) * 100) / 100
-    });
-  }
-
-  return {
-    totalEventos: all.length,
-    hoje:      bucket(x => x.receivedAt >= today),
-    ultimos7:  bucket(x => x.receivedAt >= week),
-    ultimos30: bucket(x => x.receivedAt >= month),
-    topProducts,
-    days7
-  };
 }
 app.get("/api/integrations/greenn/metrics", (req, res) => {
   res.json({ ok: true, metrics: greennMetrics() });
@@ -492,24 +436,7 @@ app.get("/api/integrations/greenn/metrics", (req, res) => {
 
 // Lista eventos recentes com filtros (pra UI de Integrações) - v4.16
 function greennFilterEvents(events, q) {
-  q = q || {};
-  const search = String(q.search || '').toLowerCase().trim();
-  const status = String(q.status || '').toLowerCase().trim();
-  const product = String(q.product || '').toLowerCase().trim();
-  const fromTs = Number(q.from) || 0;
-  const toTs = Number(q.to) || Date.now() + 1;
-  return events.filter(ev => {
-    if (status && ev.status !== status) return false;
-    if (product && !String(ev.productName || '').toLowerCase().includes(product)) return false;
-    if (fromTs && ev.receivedAt < fromTs) return false;
-    if (toTs && ev.receivedAt > toTs) return false;
-    if (search) {
-      const hay = [ev.name, ev.phone, ev.email, ev.productName, ev.statusLabel, ev.transactionId, ev.status]
-        .join(' ').toLowerCase();
-      if (!hay.includes(search)) return false;
-    }
-    return true;
-  });
+  return platformUtils.filterEvents(events, q);
 }
 app.get("/api/integrations/greenn/events", (req, res) => {
   const arr = greennLoad();
@@ -1298,59 +1225,14 @@ app.post("/api/webhook/kiwify", (req, res) => {
 });
 
 function kiwifyMetrics() {
-  const all = kiwifyLoad();
-  const now = Date.now(), day = 24 * 60 * 60 * 1000;
-  const startOfDay = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x.getTime(); };
-  const today = startOfDay(now), week = now - 7 * day, month = now - 30 * day;
-  const bucket = (filterFn) => {
-    const arr = all.filter(filterFn);
-    const paid = arr.filter(x => x.status === "paid");
-    const abandoned = arr.filter(x => x.status === "abandoned");
-    const refused = arr.filter(x => x.status === "refused");
-    const expired = arr.filter(x => x.status === "expired");
-    const refunded = arr.filter(x => x.status === "refunded" || x.status === "chargedback");
-    const revenue = paid.reduce((s, x) => s + (Number(x.total) || 0), 0);
-    return {
-      total: arr.length, paid: paid.length, abandoned: abandoned.length,
-      refused: refused.length, expired: expired.length, refunded: refunded.length,
-      revenue: Math.round(revenue * 100) / 100,
-      conversionPct: arr.length ? Math.round((paid.length / arr.length) * 1000) / 10 : 0,
-      avgTicket: paid.length ? Math.round((revenue / paid.length) * 100) / 100 : 0
-    };
-  };
-  const paidAll = all.filter(x => x.status === "paid" && x.productName);
-  const byProduct = {};
-  paidAll.forEach(x => {
-    if (!byProduct[x.productName]) byProduct[x.productName] = { count: 0, revenue: 0 };
-    byProduct[x.productName].count++;
-    byProduct[x.productName].revenue += Number(x.total) || 0;
+  return platformUtils.computeMetrics(kiwifyLoad(), {
+    paidStatuses: ["paid"],
+    abandonedStatuses: ["abandoned"]
   });
-  const topProducts = Object.keys(byProduct)
-    .map(name => ({ name, count: byProduct[name].count, revenue: Math.round(byProduct[name].revenue * 100) / 100 }))
-    .sort((a, b) => b.revenue - a.revenue).slice(0, 5);
-  const days7 = [];
-  for (let i = 6; i >= 0; i--) {
-    const dStart = startOfDay(now - i * day), dEnd = dStart + day;
-    const dayPaid = all.filter(x => x.receivedAt >= dStart && x.receivedAt < dEnd && x.status === "paid");
-    days7.push({ date: new Date(dStart).toISOString().slice(0, 10), vendas: dayPaid.length, receita: Math.round(dayPaid.reduce((s, x) => s + (Number(x.total) || 0), 0) * 100) / 100 });
-  }
-  return { totalEventos: all.length, hoje: bucket(x => x.receivedAt >= today), ultimos7: bucket(x => x.receivedAt >= week), ultimos30: bucket(x => x.receivedAt >= month), topProducts, days7 };
 }
 
 function kiwifyFilterEvents(events, q) {
-  q = q || {};
-  const search = String(q.search || '').toLowerCase().trim();
-  const status = String(q.status || '').toLowerCase().trim();
-  const product = String(q.product || '').toLowerCase().trim();
-  return events.filter(ev => {
-    if (status && ev.status !== status) return false;
-    if (product && !String(ev.productName || '').toLowerCase().includes(product)) return false;
-    if (search) {
-      const hay = [ev.name, ev.phone, ev.email, ev.productName, ev.statusLabel, ev.transactionId, ev.status, ev.event].join(' ').toLowerCase();
-      if (!hay.includes(search)) return false;
-    }
-    return true;
-  });
+  return platformUtils.filterEvents(events, q);
 }
 
 app.get("/api/integrations/kiwify/events", (req, res) => {
@@ -1558,60 +1440,14 @@ app.post("/api/webhook/hotmart", (req, res) => {
 });
 
 function hotmartMetrics() {
-  const all = hotmartLoad();
-  const now = Date.now();
-  const day = 24 * 60 * 60 * 1000;
-  const startOfDay = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x.getTime(); };
-  const today = startOfDay(now), week = now - 7 * day, month = now - 30 * day;
-  const bucket = (filterFn) => {
-    const arr = all.filter(filterFn);
-    const paid = arr.filter(x => x.status === "paid");
-    const abandoned = arr.filter(x => x.status === "abandoned");
-    const refused = arr.filter(x => x.status === "refused");
-    const expired = arr.filter(x => x.status === "expired");
-    const refunded = arr.filter(x => x.status === "refunded" || x.status === "chargedback");
-    const revenue = paid.reduce((s, x) => s + (Number(x.total) || 0), 0);
-    return {
-      total: arr.length, paid: paid.length, abandoned: abandoned.length,
-      refused: refused.length, expired: expired.length, refunded: refunded.length,
-      revenue: Math.round(revenue * 100) / 100,
-      conversionPct: arr.length ? Math.round((paid.length / arr.length) * 1000) / 10 : 0,
-      avgTicket: paid.length ? Math.round((revenue / paid.length) * 100) / 100 : 0
-    };
-  };
-  const paidAll = all.filter(x => x.status === "paid" && x.productName);
-  const byProduct = {};
-  paidAll.forEach(x => {
-    if (!byProduct[x.productName]) byProduct[x.productName] = { count: 0, revenue: 0 };
-    byProduct[x.productName].count++;
-    byProduct[x.productName].revenue += Number(x.total) || 0;
+  return platformUtils.computeMetrics(hotmartLoad(), {
+    paidStatuses: ["paid"],
+    abandonedStatuses: ["abandoned"]
   });
-  const topProducts = Object.keys(byProduct)
-    .map(name => ({ name, count: byProduct[name].count, revenue: Math.round(byProduct[name].revenue * 100) / 100 }))
-    .sort((a, b) => b.revenue - a.revenue).slice(0, 5);
-  const days7 = [];
-  for (let i = 6; i >= 0; i--) {
-    const dStart = startOfDay(now - i * day), dEnd = dStart + day;
-    const dayPaid = all.filter(x => x.receivedAt >= dStart && x.receivedAt < dEnd && x.status === "paid");
-    days7.push({ date: new Date(dStart).toISOString().slice(0, 10), vendas: dayPaid.length, receita: Math.round(dayPaid.reduce((s, x) => s + (Number(x.total) || 0), 0) * 100) / 100 });
-  }
-  return { totalEventos: all.length, hoje: bucket(x => x.receivedAt >= today), ultimos7: bucket(x => x.receivedAt >= week), ultimos30: bucket(x => x.receivedAt >= month), topProducts, days7 };
 }
 
 function hotmartFilterEvents(events, q) {
-  q = q || {};
-  const search = String(q.search || '').toLowerCase().trim();
-  const status = String(q.status || '').toLowerCase().trim();
-  const product = String(q.product || '').toLowerCase().trim();
-  return events.filter(ev => {
-    if (status && ev.status !== status) return false;
-    if (product && !String(ev.productName || '').toLowerCase().includes(product)) return false;
-    if (search) {
-      const hay = [ev.name, ev.phone, ev.email, ev.productName, ev.statusLabel, ev.transactionId, ev.status, ev.event].join(' ').toLowerCase();
-      if (!hay.includes(search)) return false;
-    }
-    return true;
-  });
+  return platformUtils.filterEvents(events, q);
 }
 
 app.get("/api/integrations/hotmart/events", (req, res) => {
@@ -1834,64 +1670,14 @@ app.post("/api/webhook/eduzz", (req, res) => {
 });
 
 function eduzzMetrics() {
-  const all = eduzzLoad();
-  const now = Date.now();
-  const day = 24 * 60 * 60 * 1000;
-  const startOfDay = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x.getTime(); };
-  const today = startOfDay(now), week = now - 7 * day, month = now - 30 * day;
-  const bucket = (filterFn) => {
-    const arr = all.filter(filterFn);
-    const paid = arr.filter(x => x.status === "paid");
-    const abandoned = arr.filter(x => x.status === "abandoned");
-    const refused = arr.filter(x => x.status === "refused");
-    const expired = arr.filter(x => x.status === "expired");
-    const refunded = arr.filter(x => x.status === "refunded" || x.status === "chargedback");
-    const revenue = paid.reduce((s, x) => s + (Number(x.total) || 0), 0);
-    return {
-      total: arr.length, paid: paid.length, abandoned: abandoned.length,
-      refused: refused.length, expired: expired.length, refunded: refunded.length,
-      revenue: Math.round(revenue * 100) / 100,
-      conversionPct: arr.length ? Math.round((paid.length / arr.length) * 1000) / 10 : 0,
-      avgTicket: paid.length ? Math.round((revenue / paid.length) * 100) / 100 : 0
-    };
-  };
-  const paidAll = all.filter(x => x.status === "paid" && x.productName);
-  const byProduct = {};
-  paidAll.forEach(x => {
-    if (!byProduct[x.productName]) byProduct[x.productName] = { count: 0, revenue: 0 };
-    byProduct[x.productName].count++;
-    byProduct[x.productName].revenue += Number(x.total) || 0;
+  return platformUtils.computeMetrics(eduzzLoad(), {
+    paidStatuses: ["paid"],
+    abandonedStatuses: ["abandoned"]
   });
-  const topProducts = Object.keys(byProduct)
-    .map(name => ({ name, count: byProduct[name].count, revenue: Math.round(byProduct[name].revenue * 100) / 100 }))
-    .sort((a, b) => b.revenue - a.revenue).slice(0, 5);
-  const days7 = [];
-  for (let i = 6; i >= 0; i--) {
-    const dStart = startOfDay(now - i * day), dEnd = dStart + day;
-    const dayPaid = all.filter(x => x.receivedAt >= dStart && x.receivedAt < dEnd && x.status === "paid");
-    days7.push({
-      date: new Date(dStart).toISOString().slice(0, 10),
-      vendas: dayPaid.length,
-      receita: Math.round(dayPaid.reduce((s, x) => s + (Number(x.total) || 0), 0) * 100) / 100
-    });
-  }
-  return { totalEventos: all.length, hoje: bucket(x => x.receivedAt >= today), ultimos7: bucket(x => x.receivedAt >= week), ultimos30: bucket(x => x.receivedAt >= month), topProducts, days7 };
 }
 
 function eduzzFilterEvents(events, q) {
-  q = q || {};
-  const search = String(q.search || '').toLowerCase().trim();
-  const status = String(q.status || '').toLowerCase().trim();
-  const product = String(q.product || '').toLowerCase().trim();
-  return events.filter(ev => {
-    if (status && ev.status !== status) return false;
-    if (product && !String(ev.productName || '').toLowerCase().includes(product)) return false;
-    if (search) {
-      const hay = [ev.name, ev.phone, ev.email, ev.productName, ev.statusLabel, ev.transactionId, ev.status].join(' ').toLowerCase();
-      if (!hay.includes(search)) return false;
-    }
-    return true;
-  });
+  return platformUtils.filterEvents(events, q);
 }
 
 app.get("/api/integrations/eduzz/events", (req, res) => {
