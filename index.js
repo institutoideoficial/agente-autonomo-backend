@@ -492,6 +492,77 @@ app.get("/api/integrations/greenn/status", (req, res) => {
 });
 
 // ============================================================
+// WEBHOOK GENERICO (v4.24) - Zapier/Make/n8n/qualquer
+// ============================================================
+const GENERIC_FILE = process.env.GENERIC_FILE || path.join(__dirname, "data", "generic-events.json");
+const GENERIC_TOKEN = process.env.GENERIC_TOKEN || "";
+const GENERIC_MAX = 200;
+function genericLoad() { try { return JSON.parse(require("fs").readFileSync(GENERIC_FILE, "utf8")); } catch { return []; } }
+function genericSave(arr) { try { require("fs").writeFileSync(GENERIC_FILE, JSON.stringify(arr.slice(-GENERIC_MAX), null, 2)); } catch (e) { console.error("[generic]", e?.message); } }
+
+function normalizeGenericPayload(raw, query) {
+  raw = raw || {}; query = query || {};
+  function findKey(obj, ...keys) {
+    if (!obj || typeof obj !== "object") return null;
+    const lk = keys.map(k => k.toLowerCase());
+    for (const k of Object.keys(obj)) if (lk.includes(k.toLowerCase()) && obj[k] != null && obj[k] !== "") return obj[k];
+    for (const k of Object.keys(obj)) if (typeof obj[k] === "object") { const v = findKey(obj[k], ...keys); if (v !== null) return v; }
+    return null;
+  }
+  const phoneRaw = query.phone || findKey(raw, "phone","telephone","cellphone","whatsapp","mobile","celular","tel","checkout_phone","cus_cel");
+  const name = query.name || findKey(raw, "name","full_name","nome","fullname","customer_name") || "";
+  const email = query.email || findKey(raw, "email","mail") || "";
+  const productName = query.product || findKey(raw, "product_name","product","item","title","produto") || "";
+  const total = Number(query.total || findKey(raw, "total","value","amount","price","valor") || 0);
+  const status = String(query.status || findKey(raw, "status","state","event_status") || "received").toLowerCase();
+  const transactionId = query.transactionId || findKey(raw, "id","transaction_id","order_id","transaction") || null;
+  const event = query.event || findKey(raw, "event","event_name","type") || "generic";
+  return {
+    event, type: "generic", status, statusLabel: greennStatusLabel(status),
+    name, email, phone: String(phoneRaw || "").replace(/\D/g, ""),
+    productName, total, currency: "BRL", transactionId,
+    receivedAt: Date.now(), raw
+  };
+}
+
+app.post("/api/webhook/generic", (req, res) => {
+  try {
+    if (GENERIC_TOKEN) {
+      const sent = req.query.token || req.headers["x-webhook-token"] || req.headers["authorization"]?.replace(/^Bearer\s+/i, "");
+      if (sent !== GENERIC_TOKEN) return res.status(401).json({ ok: false, error: "token invalido" });
+    }
+    const norm = normalizeGenericPayload(req.body, req.query);
+    const arr = genericLoad(); arr.push(norm); genericSave(arr);
+    broadcastSSE({ type: "generic_event", data: { ...norm, raw: undefined } });
+    res.json({ ok: true, normalized: { phone: norm.phone, name: norm.name, status: norm.status, event: norm.event } });
+  } catch (e) { console.error("[generic webhook]", e?.message); res.status(500).json({ ok: false, error: e?.message }); }
+});
+app.get("/api/webhook/generic", (req, res) => {
+  if (Object.keys(req.query).length === 0) return res.status(400).json({ ok: false, error: "POST com JSON ou GET com query string" });
+  if (GENERIC_TOKEN && req.query.token !== GENERIC_TOKEN) return res.status(401).json({ ok: false, error: "token invalido" });
+  const norm = normalizeGenericPayload({}, req.query);
+  const arr = genericLoad(); arr.push(norm); genericSave(arr);
+  broadcastSSE({ type: "generic_event", data: { ...norm, raw: undefined } });
+  res.json({ ok: true, normalized: { phone: norm.phone, status: norm.status } });
+});
+app.get("/api/integrations/generic/status", (req, res) => {
+  res.json({
+    ok: true, enabled: true, tokenConfigured: !!GENERIC_TOKEN,
+    webhookUrl: `${req.protocol}://${req.get("host")}/api/webhook/generic`,
+    eventsCount: genericLoad().length,
+    examples: {
+      curl: `curl -X POST '${req.protocol}://${req.get("host")}/api/webhook/generic' -H 'Content-Type: application/json' -d '{"name":"Joao","phone":"5511999999999","status":"paid","product":"Curso X","total":497}'`,
+      queryUrl: `${req.protocol}://${req.get("host")}/api/webhook/generic?phone=5511999999999&name=Joao&status=paid&product=Curso&total=497`
+    }
+  });
+});
+app.get("/api/integrations/generic/events", (req, res) => {
+  const arr = genericLoad();
+  const limit = Math.min(Number(req.query.limit) || 50, 500);
+  res.json({ ok: true, count: arr.length, items: arr.slice(-limit).reverse() });
+});
+
+// ============================================================
 // INTEGRACAO WHATSAPP CLOUD API (v4.23) - Meta oficial
 // ============================================================
 const WA_CLOUD_TOKEN = process.env.WA_CLOUD_TOKEN || "";
