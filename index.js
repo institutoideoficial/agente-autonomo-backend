@@ -833,7 +833,7 @@ app.get("/api/insights/health", async (req, res) => {
     const scheduled = (typeof schedLoad === 'function' ? schedLoad() : []);
     res.json({
       ok: true,
-      crm: { uptimeSec: Math.round((Date.now() - SERVER_BOOT_AT) / 1000), version: "v4.29", bootAt: new Date(SERVER_BOOT_AT).toISOString() },
+      crm: { uptimeSec: Math.round((Date.now() - SERVER_BOOT_AT) / 1000), version: "v4.32", bootAt: new Date(SERVER_BOOT_AT).toISOString() },
       bravos: { ok: bravosOk, ...bravosState, url: BRAVOS_URL },
       ai: { configured: !!process.env.ANTHROPIC_API_KEY },
       google: { configured: !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET), connected: !!(googleLoadTokens()?.access_token), autoEvent: GOOGLE_AUTO_EVENT_ENABLED },

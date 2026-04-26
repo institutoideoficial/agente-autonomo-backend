@@ -794,6 +794,8 @@ function navTo(sec){
   else if(sec==='lixeira') renderTrashPage(main);
   else if(sec==='agenda') renderAgendaPage(main);
   else if(sec==='integ') renderIntegracoesPage(main);
+  else if(sec==='disparos') renderDisparosPage(main);
+  else if(sec==='notif') renderNotifPage(main);
   else if(PLACEHOLDERS[sec]) renderPlaceholder(main, sec);
 }
 
@@ -804,8 +806,12 @@ function renderTemplatesPage(main){
   var html = '<div class="tpl-page">'+
     '<h2>Respostas Rapidas</h2>'+
     '<div class="tpl-sub">Atalhos pra responder rapido. Use <code style="background:var(--panel2);padding:1px 6px;border-radius:4px">{nome}</code>, <code style="background:var(--panel2);padding:1px 6px;border-radius:4px">{hora}</code>, <code style="background:var(--panel2);padding:1px 6px;border-radius:4px">{dia}</code>, <code style="background:var(--panel2);padding:1px 6px;border-radius:4px">{telefone}</code> que se substituem ao enviar. No campo de mensagem digite <code style="background:var(--panel2);padding:1px 6px;border-radius:4px">/tmp:saudacao</code> pra inserir.</div>'+
-    '<button class="tpl-add" onclick="tplOpenForm()">+ Novo template</button>'+
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">'+
+      '<button class="tpl-add" onclick="tplOpenForm()">+ Novo template</button>'+
+      '<button class="tpl-add" style="background:linear-gradient(90deg,#7c3aed,#3b82f6);color:#fff;border:none" onclick="tplIASuggest()">✨ Sugerir com IA</button>'+
+    '</div>'+
     '<div id="tpl-form-container"></div>'+
+    '<div id="tpl-ia-result"></div>'+
     '<div class="tpl-list">';
   tpls.forEach(function(t,i){
     html += '<div class="tpl-card">'+
@@ -872,26 +878,241 @@ function tplDelete(i){
   renderTemplatesPage(document.getElementById('main'));
 }
 
-// Placeholders das features novas (sidebar Waseller)
-var PLACEHOLDERS={
-  
-  
-  
-  disparos: {
-    icon:'<svg width="34" height="34" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>',
-    title:'Disparos em massa',
-    desc:'<strong style="color:#ef4444">CUIDADO:</strong> envio em massa pelo whatsapp-web.js (nao-oficial) <strong>banca o numero rapido</strong>. Esta feature foi pensada mas nao sera implementada nesta versao por seguranca. Use a API Oficial Cloud do Meta se realmente precisar disparar pra muitos.',
-    features:['<span style="color:#f59e0b">Risco alto de ban</span>','Use API Oficial pra disparos','Limite seguro: ~30 msgs/dia','Conversas 1:1 sao livres']
-  },
-  
-  
-  notif: {
-    icon:'<svg width="34" height="34" viewBox="0 0 24 24" fill="currentColor"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>',
-    title:'Notificacoes',
-    desc:'Hoje voce ja recebe toast no canto superior direito a cada nova mensagem. Esta tela vai consolidar todos os eventos.',
-    features:['Som customizavel por contato','Notificacoes do navegador','Resumo diario por email','Filtro por tipo (msg/conexao/erro)']
+// v4.32: Templates sugeridos por IA
+function tplIASuggest(){
+  var box = document.getElementById('tpl-ia-result'); if(!box) return;
+  box.innerHTML =
+    '<div style="background:var(--panel);border-radius:10px;padding:14px;margin-top:10px;border-left:3px solid #7c3aed">'+
+    '<div style="font-size:13px;font-weight:600;margin-bottom:8px">✨ IA sugere template baseado em:</div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">'+
+      '<select id="ia-status" style="background:var(--panel2);border:1px solid var(--border);color:var(--text);padding:8px;border-radius:6px">'+
+        '<option value="abandoned">🛒 Carrinho abandonado</option>'+
+        '<option value="paid">💰 Compra aprovada</option>'+
+        '<option value="refused">❌ Compra recusada</option>'+
+        '<option value="pending">⏳ Aguardando pagamento</option>'+
+        '<option value="refunded">💸 Reembolso solicitado</option>'+
+        '<option value="lead">🎯 Lead novo</option>'+
+        '<option value="followup">🔁 Follow-up sem resposta</option>'+
+      '</select>'+
+      '<select id="ia-tone" style="background:var(--panel2);border:1px solid var(--border);color:var(--text);padding:8px;border-radius:6px">'+
+        '<option value="amigavel">😊 Amigavel</option>'+
+        '<option value="profissional">💼 Profissional</option>'+
+        '<option value="urgente">⚡ Urgente</option>'+
+        '<option value="empatico">💜 Empatico</option>'+
+      '</select>'+
+    '</div>'+
+    '<input id="ia-context" placeholder="Contexto extra opcional (ex: produto Speakers Play, oferta de 20% off)" style="width:100%;background:var(--panel2);border:1px solid var(--border);color:var(--text);padding:8px;border-radius:6px;margin-bottom:8px;font-size:12px">'+
+    '<button class="tpl-add" style="background:linear-gradient(90deg,#7c3aed,#3b82f6);color:#fff;border:none" onclick="tplIAGerar()">🤖 Gerar template</button>'+
+    '<button class="tpl-add" style="background:#444;color:#fff;border:none;margin-left:6px" onclick="document.getElementById(\'tpl-ia-result\').innerHTML=\'\'">Cancelar</button>'+
+    '<div id="ia-out"></div>'+
+    '</div>';
+}
+async function tplIAGerar(){
+  var status = document.getElementById('ia-status').value;
+  var tone   = document.getElementById('ia-tone').value;
+  var ctx    = document.getElementById('ia-context').value;
+  var out = document.getElementById('ia-out');
+  out.innerHTML = '<div style="margin-top:10px;padding:10px;background:var(--panel2);border-radius:6px;color:var(--text2);text-align:center;font-size:12px">⏳ IA pensando...</div>';
+  try{
+    var r = await fetch('/api/ai/template-suggest', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ status: status, tone: tone, context: ctx, platform: 'whatsapp' })
+    });
+    var d = await r.json();
+    if(!d.ok){
+      out.innerHTML = '<div style="margin-top:10px;padding:10px;background:#3a1a1a;color:#f59e0b;border-radius:6px;font-size:12px">⚠️ '+esc(d.error||'Erro')+(d.hint?'<br><br><strong>Como ativar:</strong> '+esc(d.hint):'')+'</div>';
+      return;
+    }
+    out.innerHTML = '<div style="margin-top:10px"><div style="font-size:11px;color:var(--text2);margin-bottom:6px">Sugestao IA:</div>'+
+      '<textarea id="ia-text" style="width:100%;min-height:90px;background:var(--panel2);border:1px solid var(--gold);color:var(--text);padding:10px;border-radius:6px;font-family:inherit;font-size:13px">'+esc(d.template||'')+'</textarea>'+
+      '<input id="ia-name" placeholder="Nome do template (ex: Carrinho amigavel)" value="'+esc((status||'')+'-'+(tone||''))+'" style="width:100%;background:var(--panel2);border:1px solid var(--border);color:var(--text);padding:8px;border-radius:6px;margin-top:6px;font-size:12px">'+
+      '<button class="tpl-add" style="background:#10b981;color:#fff;border:none;margin-top:6px" onclick="tplIASalvar()">💾 Salvar template</button>'+
+      '<button class="tpl-add" style="background:#7c3aed;color:#fff;border:none;margin-top:6px;margin-left:6px" onclick="tplIAGerar()">🔁 Refazer</button>'+
+      '</div>';
+  }catch(e){
+    out.innerHTML = '<div style="margin-top:10px;padding:10px;background:#3a1a1a;color:#ef4444;border-radius:6px;font-size:12px">Erro: '+esc(e.message)+'</div>';
   }
-};
+}
+function tplIASalvar(){
+  var n = (document.getElementById('ia-name')||{}).value || 'IA template';
+  var t = (document.getElementById('ia-text')||{}).value || '';
+  if(!t.trim()){ alert('Sem texto'); return; }
+  var tpls = loadTemplates();
+  tpls.push({ n: n.trim(), t: t.trim() });
+  saveTemplates(tpls);
+  QRS = tpls;
+  toast('✓ Template salvo');
+  renderTemplatesPage(document.getElementById('main'));
+}
+
+// Placeholders das features novas (sidebar Waseller) - v4.32: disparos e notif viraram paginas reais
+var PLACEHOLDERS={};
+
+// === v4.32: DISPAROS EM MASSA com rate limit ===
+var _bulkState = { items: [], q: '', selected: {}, status: null };
+async function renderDisparosPage(main){
+  main.style.cssText='padding:16px;overflow-y:auto;flex:1;display:block';
+  main.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text2)">⏳ carregando contatos + status...</div>';
+  try{
+    var [rc, rs] = await Promise.all([ fetch('/api/contacts'), fetch('/api/bulk-send/status') ]);
+    var dc = await rc.json(), ds = await rs.json();
+    _bulkState.items = (dc&&dc.items)||[];
+    _bulkState.status = ds||{};
+  }catch(e){}
+  renderDisparosUI(main);
+}
+function renderDisparosUI(main){
+  var st = _bulkState.status || {};
+  var items = _bulkState.items.slice();
+  var q = (_bulkState.q||'').toLowerCase().trim();
+  if(q){
+    items = items.filter(function(c){
+      return (c.name||'').toLowerCase().indexOf(q)>=0 ||
+             (c.phone||'').indexOf(q)>=0 ||
+             (c.email||'').toLowerCase().indexOf(q)>=0;
+    });
+  }
+  items = items.filter(function(c){ return c.phone; });
+  var selectedIds = Object.keys(_bulkState.selected).filter(function(k){ return _bulkState.selected[k]; });
+  var remaining = st.remainingToday||0;
+  var canSend = selectedIds.length>0 && selectedIds.length<=remaining;
+  var html =
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px">'+
+      '<h2 style="font-size:18px">📣 Disparos em massa</h2>'+
+      '<div style="background:var(--panel);padding:8px 14px;border-radius:8px;font-size:12px">'+
+        '<strong style="color:'+(remaining>0?'#10b981':'#ef4444')+'">'+remaining+'</strong>'+
+        ' / '+st.dailyLimit+' restantes hoje &middot; intervalo '+st.delayBetweenMsgsSec+'s'+
+      '</div>'+
+    '</div>'+
+    '<div style="background:#3a2e0a;border-left:3px solid #f59e0b;padding:10px 14px;border-radius:6px;margin-bottom:14px;font-size:12px;color:#f59e0b">'+
+      '⚠️ Whatsapp-web.js (nao-oficial) banca numeros se exagerar. Limite '+st.dailyLimit+' msgs/dia + intervalo '+st.delayBetweenMsgsSec+'s entre msgs evita ban. Use templates personalizados, nao spam identico.'+
+    '</div>'+
+    '<div style="background:var(--panel);padding:14px;border-radius:10px;margin-bottom:14px">'+
+      '<div style="font-size:13px;font-weight:600;margin-bottom:8px">Mensagem (variaveis: {nome}, {hora}, {dia}, {telefone})</div>'+
+      '<textarea id="bulk-msg" placeholder="Ex: Oi {nome}! Tudo bem? Queria te chamar pra..." style="width:100%;min-height:90px;background:var(--panel2);border:1px solid var(--border);color:var(--text);padding:10px;border-radius:8px;font-size:13px;font-family:inherit;resize:vertical"></textarea>'+
+      '<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">'+
+        '<button class="bok" style="font-size:11px;padding:4px 10px" onclick="bulkInsertVar(\'{nome}\')">+ {nome}</button>'+
+        '<button class="bok" style="font-size:11px;padding:4px 10px" onclick="bulkInsertVar(\'{hora}\')">+ {hora}</button>'+
+        '<button class="bok" style="font-size:11px;padding:4px 10px" onclick="bulkInsertVar(\'{dia}\')">+ {dia}</button>'+
+      '</div>'+
+    '</div>'+
+    '<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center">'+
+      '<input type="text" placeholder="🔍 Filtrar contatos" value="'+esc(_bulkState.q)+'" oninput="_bulkState.q=this.value;renderDisparosUI(document.getElementById(\'main\'))" style="flex:1;min-width:200px;background:var(--panel);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:8px;font-size:13px">'+
+      '<button class="bok" onclick="bulkSelectAll()" style="font-size:12px">✓ Marcar todos visiveis</button>'+
+      '<button class="bok" onclick="bulkClearSel()" style="font-size:12px;background:#444;color:#fff">✗ Limpar</button>'+
+    '</div>'+
+    '<div style="background:var(--panel2);padding:8px 12px;border-radius:6px;margin-bottom:8px;font-size:12px;display:flex;justify-content:space-between;align-items:center">'+
+      '<span><strong style="color:var(--gold)">'+selectedIds.length+'</strong> selecionados / '+items.length+' visiveis</span>'+
+      '<button class="bok" '+(canSend?'':'disabled style="opacity:.4"')+' onclick="bulkEnviar()" style="background:'+(canSend?'#10b981':'#444')+';color:#fff;font-size:13px;padding:8px 18px">📤 Disparar pra '+selectedIds.length+'</button>'+
+    '</div>';
+  if(items.length===0){
+    html += '<div style="text-align:center;padding:30px;color:var(--text2)">Nenhum contato com telefone</div>';
+  } else {
+    items.forEach(function(c){
+      var k = c.phone;
+      var checked = _bulkState.selected[k] ? 'checked' : '';
+      html += '<label style="background:var(--panel);border-radius:8px;padding:10px 13px;margin-bottom:5px;display:flex;align-items:center;gap:11px;cursor:pointer">'+
+        '<input type="checkbox" '+checked+' onchange="_bulkState.selected[\''+esc(k)+'\']=this.checked;renderDisparosUI(document.getElementById(\'main\'))" style="width:18px;height:18px;accent-color:var(--gold)">'+
+        '<div style="width:36px;height:36px;border-radius:50%;background:'+cr(c.name||k)+';display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;flex-shrink:0">'+av(c.name||k)+'</div>'+
+        '<div style="flex:1;min-width:0">'+
+          '<div style="font-size:13px;font-weight:600">'+esc(c.name||'(sem nome)')+'</div>'+
+          '<div style="font-size:11px;color:var(--text2)">+'+esc(k)+(c.email?' &middot; '+esc(c.email):'')+'</div>'+
+        '</div>'+
+      '</label>';
+    });
+  }
+  main.innerHTML = html;
+}
+function bulkInsertVar(v){
+  var ta=document.getElementById('bulk-msg'); if(!ta) return;
+  var s=ta.selectionStart||ta.value.length;
+  ta.value = ta.value.slice(0,s)+v+ta.value.slice(s);
+  ta.focus(); ta.selectionStart=ta.selectionEnd=s+v.length;
+}
+function bulkSelectAll(){
+  var q = (_bulkState.q||'').toLowerCase().trim();
+  _bulkState.items.filter(function(c){return c.phone;}).forEach(function(c){
+    if(q && (c.name||'').toLowerCase().indexOf(q)<0 && (c.phone||'').indexOf(q)<0 && (c.email||'').toLowerCase().indexOf(q)<0) return;
+    _bulkState.selected[c.phone] = true;
+  });
+  renderDisparosUI(document.getElementById('main'));
+}
+function bulkClearSel(){ _bulkState.selected={}; renderDisparosUI(document.getElementById('main')); }
+async function bulkEnviar(){
+  var msg = (document.getElementById('bulk-msg')||{}).value || '';
+  if(!msg.trim()){ alert('Digite a mensagem'); return; }
+  var ids = Object.keys(_bulkState.selected).filter(function(k){return _bulkState.selected[k];});
+  if(!ids.length){ alert('Selecione contatos'); return; }
+  var contatos = _bulkState.items
+    .filter(function(c){ return _bulkState.selected[c.phone]; })
+    .map(function(c){ return { phone: c.phone, name: c.name||'' }; });
+  if(!confirm('Disparar pra '+contatos.length+' contatos?\n\nIntervalo: '+_bulkState.status.delayBetweenMsgsSec+'s entre msgs.\nTempo total: ~'+Math.ceil(contatos.length*_bulkState.status.delayBetweenMsgsSec/60)+' min.')) return;
+  try{
+    var r = await fetch('/api/bulk-send', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ message: msg, contacts: contatos })
+    });
+    var d = await r.json();
+    if(d.ok){
+      toast('✓ '+d.scheduled+' agendados! Veja em Agendados.');
+      _bulkState.selected={};
+      renderDisparosPage(document.getElementById('main'));
+    } else {
+      alert('Erro: '+(d.error||'desconhecido')+(d.detail?'\n'+d.detail:''));
+    }
+  }catch(e){ alert('Erro: '+e.message); }
+}
+
+// === v4.32: NOTIFICACOES (browser API + service worker push) ===
+function renderNotifPage(main){
+  main.style.cssText='padding:16px;overflow-y:auto;flex:1;display:block';
+  var perm = (typeof Notification!=='undefined') ? Notification.permission : 'unsupported';
+  var permLbl = { granted:'✅ Ativadas', denied:'❌ Bloqueadas no navegador', default:'⚠️ Nao concedidas', unsupported:'❌ Navegador nao suporta' }[perm] || perm;
+  var permClr = { granted:'#10b981', denied:'#ef4444', default:'#f59e0b', unsupported:'#666' }[perm] || '#666';
+  var swReg = (typeof navigator!=='undefined' && navigator.serviceWorker) ? '✅ Service Worker ativo' : '❌ SW indisponivel';
+  var html =
+    '<div style="max-width:760px;margin:0 auto">'+
+    '<h2 style="font-size:20px;margin-bottom:14px">🔔 Notificacoes</h2>'+
+    '<div style="background:var(--panel);border-radius:10px;padding:18px;margin-bottom:14px;border-left:3px solid '+permClr+'">'+
+      '<div style="font-size:13px;color:var(--text2);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Permissao do navegador</div>'+
+      '<div style="font-size:18px;font-weight:700;color:'+permClr+'">'+permLbl+'</div>'+
+      (perm==='default'?'<button class="bok" style="margin-top:10px;background:var(--gold);color:#111" onclick="notifAtivar()">🔓 Pedir permissao</button>':'')+
+      (perm==='denied'?'<div style="margin-top:8px;font-size:11px;color:var(--text2)">Pra liberar: clique no cadeado da URL → Site settings → Notifications → Allow</div>':'')+
+      (perm==='granted'?'<button class="bok" style="margin-top:10px" onclick="notifTeste()">🧪 Testar agora</button>':'')+
+    '</div>'+
+    '<div style="background:var(--panel);border-radius:10px;padding:18px;margin-bottom:14px">'+
+      '<div style="font-size:13px;color:var(--text2);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Service Worker (PWA)</div>'+
+      '<div style="font-size:14px">'+swReg+'</div>'+
+      '<div style="font-size:11px;color:var(--text2);margin-top:6px">Em PWA instalado mobile, recebe push mesmo com app fechado.</div>'+
+    '</div>'+
+    '<div style="background:var(--panel);border-radius:10px;padding:18px;margin-bottom:14px">'+
+      '<div style="font-size:13px;color:var(--text2);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px">Tipos de notificacao</div>'+
+      '<label style="display:flex;align-items:center;gap:10px;padding:8px 0;cursor:pointer"><input type="checkbox" '+(notifPrefGet('msg')?'checked':'')+' onchange="notifPrefSet(\'msg\',this.checked)" style="width:18px;height:18px;accent-color:var(--gold)"><span>📥 Mensagens recebidas</span></label>'+
+      '<label style="display:flex;align-items:center;gap:10px;padding:8px 0;cursor:pointer"><input type="checkbox" '+(notifPrefGet('venda')?'checked':'')+' onchange="notifPrefSet(\'venda\',this.checked)" style="width:18px;height:18px;accent-color:var(--gold)"><span>💰 Venda aprovada (Greenn/Eduzz/Hotmart/Kiwify)</span></label>'+
+      '<label style="display:flex;align-items:center;gap:10px;padding:8px 0;cursor:pointer"><input type="checkbox" '+(notifPrefGet('cart')?'checked':'')+' onchange="notifPrefSet(\'cart\',this.checked)" style="width:18px;height:18px;accent-color:var(--gold)"><span>🛒 Carrinho abandonado</span></label>'+
+      '<label style="display:flex;align-items:center;gap:10px;padding:8px 0;cursor:pointer"><input type="checkbox" '+(notifPrefGet('agenda')?'checked':'')+' onchange="notifPrefSet(\'agenda\',this.checked)" style="width:18px;height:18px;accent-color:var(--gold)"><span>📅 Agendamento enviado / falhou</span></label>'+
+      '<label style="display:flex;align-items:center;gap:10px;padding:8px 0;cursor:pointer"><input type="checkbox" '+(notifPrefGet('sound')?'checked':'')+' onchange="notifPrefSet(\'sound\',this.checked)" style="width:18px;height:18px;accent-color:var(--gold)"><span>🔊 Tocar som de aviso</span></label>'+
+      '<div style="font-size:11px;color:var(--text2);margin-top:8px">Marca o que quer receber. Funciona nesta sessao + PWA.</div>'+
+    '</div>'+
+    '</div>';
+  main.innerHTML = html;
+}
+function notifPrefGet(k){ try{ var p=JSON.parse(localStorage.getItem('imp_notif_v1')||'{}'); return k in p ? p[k] : true; }catch(e){ return true; } }
+function notifPrefSet(k,v){ try{ var p=JSON.parse(localStorage.getItem('imp_notif_v1')||'{}'); p[k]=v; localStorage.setItem('imp_notif_v1', JSON.stringify(p)); toast('Salvo'); }catch(e){} }
+function notifAtivar(){
+  if(typeof Notification==='undefined'){ alert('Navegador nao suporta'); return; }
+  Notification.requestPermission().then(function(p){
+    renderNotifPage(document.getElementById('main'));
+    if(p==='granted') toast('✓ Notificacoes ativadas');
+  });
+}
+function notifTeste(){
+  try{
+    var n = new Notification('Imperador CRM', { body: 'Funcionou! Vai chegar tudo aqui.', icon:'/icon-192.svg', tag:'teste' });
+    setTimeout(function(){ try{n.close();}catch(e){} }, 5000);
+    if(notifPrefGet('sound') && typeof playBeep==='function') playBeep();
+  }catch(e){ alert('Erro: '+e.message); }
+}
 function renderPlaceholder(main, sec){
   var p=PLACEHOLDERS[sec]; if(!p) return;
   main.innerHTML='<div class="ph-wrap">'+
@@ -1205,8 +1426,10 @@ function renderTrashPage(main){
     '<div class="trash-sub">Conversas excluidas ficam aqui por '+TRASH_TTL_DAYS+' dias antes da exclusao definitiva.</div>'+
     '<div class="trash-actions">'+
       '<button onclick="renderTrashPage(document.getElementById(\'main\'))">↻ Recarregar</button>'+
+      '<button onclick="autoArchiveSugerir()" style="background:#3b82f6;color:#fff">🤖 Sugerir auto-archive (>30d)</button>'+
       (keys.length ? '<button class="danger" onclick="trashEmpty()">Esvaziar lixeira ('+keys.length+')</button>' : '')+
-    '</div>';
+    '</div>'+
+    '<div id="auto-arch-result"></div>';
   if(keys.length===0){
     html += '<div class="trash-empty">Lixeira vazia</div>';
   } else {
@@ -1237,6 +1460,43 @@ function renderTrashPage(main){
 }
 // Auto-purge ao carregar
 trashPurgeOld();
+
+// v4.32: Sugerir contatos pra auto-archive (sem evento >30d)
+async function autoArchiveSugerir(){
+  var box = document.getElementById('auto-arch-result');
+  if(!box) return;
+  box.innerHTML = '<div style="padding:14px;color:var(--text2);text-align:center">⏳ analisando contatos inativos...</div>';
+  try{
+    var r = await fetch('/api/auto-archive/candidates?days=30');
+    var d = await r.json();
+    if(!d.ok){ box.innerHTML='<div style="color:#ef4444;padding:10px">Erro: '+esc(d.error||'?')+'</div>'; return; }
+    if(!d.items || d.items.length===0){
+      box.innerHTML = '<div style="background:var(--panel);padding:14px;border-radius:8px;margin-top:10px;color:var(--text2);text-align:center">✅ Nenhum contato inativo ha mais de 30d. Lista limpa!</div>';
+      return;
+    }
+    var html = '<div style="background:var(--panel);padding:14px;border-radius:8px;margin-top:10px">'+
+      '<div style="font-size:13px;font-weight:600;margin-bottom:10px">'+d.items.length+' contato'+(d.items.length===1?'':'s')+' inativo'+(d.items.length===1?'':'s')+' ha mais de '+d.days+' dias</div>';
+    d.items.forEach(function(c){
+      var when = c.lastSeenAt ? new Date(c.lastSeenAt).toLocaleDateString('pt-BR') : '—';
+      html += '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">'+
+        '<div style="width:32px;height:32px;border-radius:50%;background:'+cr(c.name||c.phone||'?')+';display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff">'+av(c.name||c.phone||'?')+'</div>'+
+        '<div style="flex:1"><div style="font-size:13px;font-weight:600">'+esc(c.name||'(sem nome)')+'</div>'+
+        '<div style="font-size:11px;color:var(--text2)">+'+esc(c.phone||'?')+' &middot; ult: '+when+'</div></div>'+
+        '<button class="bok" style="font-size:11px;padding:5px 10px" onclick="autoArchiveLocal(\''+esc(c.phone||'')+'\')">🗄 Arquivar local</button>'+
+      '</div>';
+    });
+    html += '<div style="margin-top:10px;padding:10px;background:var(--panel2);border-radius:6px;font-size:11px;color:var(--text2)">⚠ "Arquivar local" marca apenas a conv local que tem esse telefone. Eventos de plataforma ficam preservados.</div></div>';
+    box.innerHTML = html;
+  }catch(e){ box.innerHTML='<div style="color:#ef4444;padding:10px">Erro: '+esc(e.message)+'</div>'; }
+}
+function autoArchiveLocal(phone){
+  if(!phone) return;
+  var found = null;
+  Object.values(window.convs||{}).forEach(function(c){ if(c.ph===phone) found=c; });
+  if(!found){ toast('Sem conv local pra '+phone); return; }
+  if(typeof arquivar==='function') arquivar(found.id);
+  toast('✓ Arquivada');
+}
 
 // === AGENDADOS (v4.8) ===
 var _agFilter = 'all';
@@ -3028,18 +3288,98 @@ function renderKanban(main){
   });
 }
 
-function renderContacts(main){
+// v4.32: Contatos cross-platform via /api/contacts (agrega Greenn+Eduzz+Hotmart+Kiwify+generic)
+var _contactsState = { items: [], q: '', sort: 'lastSeen' };
+async function renderContacts(main){
   main.style.cssText='padding:16px;overflow-y:auto;flex:1;display:block';
-  var unique={};Object.values(convs).forEach(function(c){if(!unique[c.nm])unique[c.nm]=c;});
-  var html='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><h2 style="font-size:18px">Contatos ('+Object.keys(unique).length+')</h2><button class="bok" onclick="openModal(\'mnew\')">+ Novo</button></div>';
-  Object.values(unique).forEach(function(c){
-    var stl={open:'Aberta',resolved:'Resolvida',pending:'Pendente',bot:'Bot'};
-    html+='<div style="background:var(--panel);border-radius:10px;padding:13px;margin-bottom:7px;display:flex;align-items:center;gap:11px;cursor:pointer;border-left:3px solid var(--gold)" onclick="selConv(\''+c.id+'\');navTo(\'chats\')">'+
-      '<div style="width:42px;height:42px;border-radius:50%;background:'+cr(c.nm)+';display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;color:#fff;flex-shrink:0">'+av(c.nm)+'</div>'+
-      '<div style="flex:1"><div style="font-size:14px;font-weight:600">'+esc(c.nm)+'</div><div style="font-size:12px;color:var(--text2);margin-top:2px">'+(c.ph?'+'+c.ph:'Sem numero')+' &bull; '+c.dept+'</div></div>'+
-      '<span class="spill '+c.st+'">'+stl[c.st]+'</span></div>';
-  });
-  main.innerHTML=html;
+  main.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text2)">⏳ carregando contatos...</div>';
+  try{
+    var r = await fetch('/api/contacts');
+    var d = await r.json();
+    _contactsState.items = (d && d.items) || [];
+  }catch(e){ _contactsState.items = []; }
+  renderContactsList(main);
+}
+function renderContactsList(main){
+  var fmtBR = function(v){ return 'R$ ' + Number(v||0).toFixed(2).replace('.',','); };
+  var items = _contactsState.items.slice();
+  var q = (_contactsState.q||'').toLowerCase().trim();
+  if(q){
+    items = items.filter(function(c){
+      return (c.name||'').toLowerCase().indexOf(q)>=0 ||
+             (c.phone||'').indexOf(q)>=0 ||
+             (c.email||'').toLowerCase().indexOf(q)>=0;
+    });
+  }
+  if(_contactsState.sort==='lastSeen') items.sort(function(a,b){ return (b.lastSeenAt||0)-(a.lastSeenAt||0); });
+  else if(_contactsState.sort==='value') items.sort(function(a,b){ return (b.totalValue||0)-(a.totalValue||0); });
+  else if(_contactsState.sort==='name')  items.sort(function(a,b){ return (a.name||'').localeCompare(b.name||''); });
+  var totalReceita = items.reduce(function(s,c){ return s+(c.totalValue||0); }, 0);
+  var pagantes = items.filter(function(c){ return (c.paid||0)>0; }).length;
+  var srcIcon = { greenn:'🌱', eduzz:'📘', hotmart:'🔥', kiwify:'🥝', generic:'🔗', wacloud:'💬' };
+  var html =
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px">'+
+      '<h2 style="font-size:18px">Contatos cross-platform ('+_contactsState.items.length+')</h2>'+
+      '<div style="display:flex;gap:8px">'+
+        '<button class="bok" onclick="openModal(\'mnew\')">+ Novo</button>'+
+        '<a href="/api/contacts.csv" download="contatos.csv" class="bok" style="text-decoration:none;background:#10b981;color:#fff">⬇ CSV</a>'+
+      '</div>'+
+    '</div>'+
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:14px">'+
+      '<div style="background:var(--panel);padding:12px;border-radius:8px;border-left:3px solid var(--gold)"><div style="font-size:11px;color:var(--text2);text-transform:uppercase">Total contatos</div><div style="font-size:22px;font-weight:800;color:var(--gold)">'+_contactsState.items.length+'</div></div>'+
+      '<div style="background:var(--panel);padding:12px;border-radius:8px;border-left:3px solid #10b981"><div style="font-size:11px;color:var(--text2);text-transform:uppercase">Pagantes</div><div style="font-size:22px;font-weight:800;color:#10b981">'+pagantes+'</div></div>'+
+      '<div style="background:var(--panel);padding:12px;border-radius:8px;border-left:3px solid #3b82f6"><div style="font-size:11px;color:var(--text2);text-transform:uppercase">Receita total</div><div style="font-size:22px;font-weight:800;color:#3b82f6">'+fmtBR(totalReceita)+'</div></div>'+
+    '</div>'+
+    '<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">'+
+      '<input type="text" placeholder="🔍 Buscar nome / telefone / email" value="'+esc(_contactsState.q)+'" oninput="_contactsState.q=this.value;renderContactsList(document.getElementById(\'main\'))" style="flex:1;min-width:200px;background:var(--panel);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:8px;font-size:13px">'+
+      '<select onchange="_contactsState.sort=this.value;renderContactsList(document.getElementById(\'main\'))" style="background:var(--panel);border:1px solid var(--border);color:var(--text);padding:8px;border-radius:8px;font-size:13px">'+
+        '<option value="lastSeen"'+(_contactsState.sort==='lastSeen'?' selected':'')+'>Mais recentes</option>'+
+        '<option value="value"'+(_contactsState.sort==='value'?' selected':'')+'>Maior valor</option>'+
+        '<option value="name"'+(_contactsState.sort==='name'?' selected':'')+'>Nome A-Z</option>'+
+      '</select>'+
+    '</div>';
+  if(items.length===0){
+    html += '<div style="text-align:center;padding:40px;color:var(--text2);background:var(--panel);border-radius:10px">Nenhum contato '+(q?'encontrado pra "'+esc(q)+'"':'ainda. Eventos webhooks vao popular aqui.')+'</div>';
+  } else {
+    items.forEach(function(c){
+      var srcs = Object.keys(c.sources||{}).map(function(s){ return (srcIcon[s]||'•')+' '+s; }).join(' · ');
+      var prods = Object.keys(c.products||{}).slice(0,2).join(', ') || '—';
+      var when = c.lastSeenAt ? new Date(c.lastSeenAt).toLocaleDateString('pt-BR') : '—';
+      var paidColor = (c.paid||0)>0 ? '#10b981' : 'var(--text2)';
+      html += '<div style="background:var(--panel);border-radius:10px;padding:13px;margin-bottom:7px;display:flex;align-items:center;gap:11px;border-left:3px solid var(--gold);cursor:pointer" onclick="abrirContatoDoCross(\''+esc(c.phone||'')+'\',\''+esc((c.name||'').replace(/\x27/g,""))+'\')">'+
+        '<div style="width:44px;height:44px;border-radius:50%;background:'+cr(c.name||c.phone||'?')+';display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;color:#fff;flex-shrink:0">'+av(c.name||c.phone||'?')+'</div>'+
+        '<div style="flex:1;min-width:0">'+
+          '<div style="font-size:14px;font-weight:600;display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+esc(c.name||'(sem nome)')+
+            (c.email?'<span style="font-size:11px;color:var(--text2);font-weight:400">'+esc(c.email)+'</span>':'')+
+          '</div>'+
+          '<div style="font-size:12px;color:var(--text2);margin-top:2px">'+(c.phone?'+'+c.phone:'Sem numero')+' &middot; '+srcs+'</div>'+
+          '<div style="font-size:11px;color:var(--text2);margin-top:2px">📦 '+esc(prods)+' &middot; ult: '+when+'</div>'+
+        '</div>'+
+        '<div style="text-align:right;flex-shrink:0">'+
+          '<div style="font-size:16px;font-weight:800;color:'+paidColor+'">'+fmtBR(c.totalValue)+'</div>'+
+          '<div style="font-size:11px;color:var(--text2)">'+(c.paid||0)+' paga'+((c.paid||0)===1?'':'s')+' &middot; '+(c.events||0)+' ev</div>'+
+        '</div>'+
+      '</div>';
+    });
+  }
+  main.innerHTML = html;
+}
+// Abre conversa do contato cross-platform: tenta achar conv local pelo telefone, senao cria
+function abrirContatoDoCross(phone, name){
+  if(!phone){ alert('Sem telefone — abre manual em + Novo'); return; }
+  var found = null;
+  Object.values(window.convs||{}).forEach(function(c){ if(c.ph===phone) found = c; });
+  if(found){ selConv(found.id); navTo('chats'); }
+  else {
+    // pre-fill modal nova
+    openModal('mnew');
+    setTimeout(function(){
+      var inpPh = document.querySelector('#mnew input[placeholder*="elefone"], #mnew input[name="ph"]');
+      var inpNm = document.querySelector('#mnew input[placeholder*="ome"], #mnew input[name="nm"]');
+      if(inpPh) inpPh.value = phone;
+      if(inpNm) inpNm.value = name||'';
+    }, 50);
+  }
 }
 
 async function renderReports(main){
@@ -3417,12 +3757,12 @@ setTimeout(checkStatus,2000);
         if(!evt || !evt.type) return;
         if(evt.type === "whatsapp_ready"){ checkConnection(); return; }
         if(evt.type === "whatsapp_disconnected"){ checkConnection(); toast("WhatsApp desconectou"); return; }
-        if(evt.type === "greenn_event"){ if(typeof handleGreennEvent==='function') handleGreennEvent(evt.data); return; }
-        if(evt.type === "eduzz_event"){ if(typeof handleEduzzEvent==='function') handleEduzzEvent(evt.data); return; }
-        if(evt.type === "hotmart_event"){ if(typeof handleHotmartEvent==='function') handleHotmartEvent(evt.data); return; }
-        if(evt.type === "kiwify_event"){ if(typeof handleKiwifyEvent==='function') handleKiwifyEvent(evt.data); return; }
+        if(evt.type === "greenn_event"){ if(typeof handleGreennEvent==='function') handleGreennEvent(evt.data); notifyEvento('greenn', evt.data); return; }
+        if(evt.type === "eduzz_event"){ if(typeof handleEduzzEvent==='function') handleEduzzEvent(evt.data); notifyEvento('eduzz', evt.data); return; }
+        if(evt.type === "hotmart_event"){ if(typeof handleHotmartEvent==='function') handleHotmartEvent(evt.data); notifyEvento('hotmart', evt.data); return; }
+        if(evt.type === "kiwify_event"){ if(typeof handleKiwifyEvent==='function') handleKiwifyEvent(evt.data); notifyEvento('kiwify', evt.data); return; }
         if(evt.type === "wa_cloud_status"){ console.log('[wa-cloud status]', evt.data); return; }
-        if(evt.type === "message_in"){ handleRealRow(evt.data, false); return; }
+        if(evt.type === "message_in"){ handleRealRow(evt.data, false); notifyMsg(evt.data); return; }
         if(evt.type === "message_out"){ handleRealRow(evt.data, true); return; }
         // fallback legado: backend antigo emitia sempre "new_message" com payload embrulhado
         if(evt.type === "new_message" && evt.data){
@@ -3534,6 +3874,45 @@ setTimeout(checkStatus,2000);
   }
   // Pede permissao na primeira vez (suave)
   setTimeout(function(){ notifPermission(); }, 4000);
+
+  // v4.32: notifica eventos de plataforma de pagamento (respeita prefs em /notif)
+  function _notifPref(k){ try{ var p=JSON.parse(localStorage.getItem('imp_notif_v1')||'{}'); return k in p ? p[k] : true; }catch(e){ return true; } }
+  window.notifyEvento = function(plat, ev){
+    if(typeof Notification==='undefined' || Notification.permission!=='granted') return;
+    if(!ev) return;
+    var st = (ev.status||'').toLowerCase();
+    var nome = ev.name || ev.customer || ev.email || 'Cliente';
+    var prod = ev.productName || ev.product || '';
+    var fmtBR = function(v){ return 'R$ ' + Number(v||0).toFixed(2).replace('.',','); };
+    var icon = { greenn:'🌱', eduzz:'📘', hotmart:'🔥', kiwify:'🥝' }[plat] || '🔔';
+    var title = '', body = '', tag = plat+'-'+(ev.transactionId||Date.now());
+    if(st==='paid' || st==='approved' || st==='complete'){
+      if(!_notifPref('venda')) return;
+      title = icon+' Venda aprovada — '+fmtBR(ev.total||0);
+      body = nome+(prod?' — '+prod:'');
+    } else if(st==='abandoned' || st==='cart_abandoned'){
+      if(!_notifPref('cart')) return;
+      title = icon+' Carrinho abandonado';
+      body = nome+(prod?' — '+prod:'');
+    } else if(st==='refused' || st==='declined' || st==='canceled'){
+      if(!_notifPref('venda')) return;
+      title = icon+' Compra recusada';
+      body = nome+(prod?' — '+prod:'');
+    } else { return; }
+    if(_notifPref('sound') && typeof playBeep==='function') playBeep();
+    try{
+      var n = new Notification('Imperador CRM: '+title, { body: String(body).slice(0,140), icon:'/icon-192.svg', tag: tag, silent: true });
+      n.onclick = function(){ window.focus(); n.close(); };
+      setTimeout(function(){ try{ n.close(); }catch(e){} }, 8000);
+    }catch(e){}
+  };
+  window.notifyMsg = function(d){
+    if(!_notifPref('msg')) return;
+    if(typeof showNotif!=='function') return;
+    var nome = (d && (d.pushname || d.from || d.chat_id)) || 'Contato';
+    var txt = (d && (d.body || d.text)) || '(midia)';
+    showNotif(nome, txt);
+  };
 
   // v4.11: Theme toggle (dark / light)
   var IMP_THEME_KEY = "imp_theme_v1";
