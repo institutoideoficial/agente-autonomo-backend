@@ -520,6 +520,14 @@ body{background:var(--bg);color:var(--text);height:100vh;display:flex;overflow:h
 /* KANBAN, CONTACTS, etc */
 .kanban-col{min-width:220px;background:var(--panel);border-radius:10px;border-top:3px solid var(--gold)}
 </style>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#C8A84B">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Imperador">
+<link rel="apple-touch-icon" href="/icon-192.svg">
+<link rel="icon" type="image/svg+xml" href="/icon-192.svg">
+<script>if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}));}</script>
 </head>
 <body>
 
