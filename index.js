@@ -841,6 +841,17 @@ app.post("/api/conv/sync", (req, res) => {
   } catch (e) { res.status(500).json({ ok: false, error: e?.message }); }
 });
 
+// v4.32: status do DNS watch (cron na VPS docker-exec escreve flag em /app/data/)
+app.get("/api/dns-status", (_req, res) => {
+  const flag = process.env.DNS_FLAG_FILE || path.join(__dirname, "data", "dns-propagated.flag");
+  try {
+    const data = JSON.parse(require('fs').readFileSync(flag, 'utf8'));
+    res.json({ ok: true, ...data });
+  } catch {
+    res.json({ ok: true, propagated: false, propagatedAt: null, hint: "DNS ainda nao propagou. Cron na VPS checa a cada hora (xx:23)." });
+  }
+});
+
 app.get("/api/contacts/tags/all", (_req, res) => {
   const map = contactTagsLoad();
   const counts = {};

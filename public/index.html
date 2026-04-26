@@ -1173,6 +1173,22 @@ async function loadHomeDashboard(){
     }
     grid.innerHTML = html;
   }catch(e){}
+  // v4.32: DNS propagation banner
+  try{
+    var dr = await fetch('/api/dns-status');
+    var dd = await dr.json();
+    if(dd && dd.propagated){
+      var when = dd.propagatedAt ? new Date(dd.propagatedAt).toLocaleString('pt-BR') : '?';
+      var existing = document.getElementById('dns-prop-banner');
+      if(!existing){
+        var banner = document.createElement('div');
+        banner.id = 'dns-prop-banner';
+        banner.style.cssText = 'position:fixed;top:0;left:0;right:0;background:linear-gradient(90deg,#10b981,#059669);color:#fff;padding:14px 18px;text-align:center;font-weight:700;z-index:99999;box-shadow:0 4px 20px rgba(16,185,129,.4);font-size:14px';
+        banner.innerHTML = '🎉 DNS propagou em '+esc(when)+'! HTTPS ativo: <a href="'+esc(dd.appUrl||'/app')+'" style="color:#fff;text-decoration:underline;font-weight:800">'+esc(dd.appUrl||'/app')+'</a> &middot; <button onclick="this.parentElement.remove()" style="background:rgba(255,255,255,.25);color:#fff;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;margin-left:10px;font-weight:600">×</button>';
+        document.body.appendChild(banner);
+      }
+    }
+  }catch(e){}
 }
 
 // === VIEWS: inbox / locked / archived (v4.2 estilo Waseller) ===
