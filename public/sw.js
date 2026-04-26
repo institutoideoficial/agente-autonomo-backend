@@ -14,6 +14,25 @@ self.addEventListener('activate', e => {
   );
 });
 
+// v4.31: push notifications + click handler
+self.addEventListener('push', e => {
+  let data = {};
+  try { data = e.data ? e.data.json() : {}; } catch {}
+  const title = data.title || 'Imperador CRM';
+  const body = data.body || 'Nova atividade';
+  const icon = '/icon-192.svg';
+  const tag = data.tag || 'imperador-msg';
+  e.waitUntil(self.registration.showNotification(title, { body, icon, badge: icon, tag, data: data.url || '/app' }));
+});
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  const url = e.notification.data || '/app';
+  e.waitUntil(self.clients.matchAll({ type: 'window' }).then(list => {
+    for (const c of list) { if (c.url.includes('/app') && 'focus' in c) return c.focus(); }
+    if (self.clients.openWindow) return self.clients.openWindow(url);
+  }));
+});
+
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
   // SSE, webhooks, APIs sempre passam direto (network only)

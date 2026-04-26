@@ -651,6 +651,164 @@ app.get("/api/integrations/generic/events", (req, res) => {
 });
 
 // ============================================================
+// CONTATOS / BULK / IA TEMPLATES / AUTO-ARCHIVE (v4.31)
+// ============================================================
+
+// Helper: agrega contatos unicos cross-plataforma
+function aggregateContacts() {
+  const fsLib = require('fs');
+  function tryLoad(file) { try { return JSON.parse(fsLib.readFileSync(file, 'utf8')); } catch { return []; } }
+  const sources = [
+    ['greenn', GREENN_FILE], ['eduzz', EDUZZ_FILE], ['hotmart', HOTMART_FILE],
+    ['kiwify', KIWIFY_FILE], ['generic', GENERIC_FILE]
+  ];
+  const byPhone = {};
+  sources.forEach(([source, f]) => {
+    tryLoad(f).forEach(ev => {
+      if (!ev.phone) return;
+      const k = ev.phone;
+      if (!byPhone[k]) byPhone[k] = {
+        phone: ev.phone, name: ev.name || '', email: ev.email || '',
+        events: 0, paid: 0, totalValue: 0, products: {},
+        sources: {}, firstSeenAt: ev.receivedAt || 0, lastSeenAt: 0,
+        statuses: {}
+      };
+      const c = byPhone[k];
+      c.events++;
+      if (ev.name && (!c.name || c.name.length < ev.name.length)) c.name = ev.name;
+      if (ev.email && !c.email) c.email = ev.email;
+      c.sources[source] = (c.sources[source] || 0) + 1;
+      if (ev.status) c.statuses[ev.status] = (c.statuses[ev.status] || 0) + 1;
+      if (ev.status === 'paid' || ev.status === 'approved') {
+        c.paid++;
+        c.totalValue += Number(ev.total) || 0;
+      }
+      if (ev.productName) c.products[ev.productName] = (c.products[ev.productName] || 0) + 1;
+      if (ev.receivedAt && ev.receivedAt < c.firstSeenAt) c.firstSeenAt = ev.receivedAt;
+      if (ev.receivedAt > c.lastSeenAt) c.lastSeenAt = ev.receivedAt;
+    });
+  });
+  return Object.values(byPhone)
+    .map(c => ({ ...c, totalValue: Math.round(c.totalValue * 100) / 100 }))
+    .sort((a, b) => b.lastSeenAt - a.lastSeenAt);
+}
+
+app.get("/api/contacts", (req, res) => {
+  const all = aggregateContacts();
+  const search = String(req.query.search || '').toLowerCase().trim();
+  const filtered = search
+    ? all.filter(c => [c.name, c.phone, c.email].join(' ').toLowerCase().includes(search))
+    : all;
+  const limit = Math.min(Number(req.query.limit) || 100, 1000);
+  res.json({ ok: true, total: all.length, count: filtered.length, items: filtered.slice(0, limit) });
+});
+
+app.get("/api/contacts.csv", (req, res) => {
+  const all = aggregateContacts();
+  const flat = all.map(c => ({
+    phone: c.phone, name: c.name, email: c.email,
+    events: c.events, paid: c.paid, totalValue: c.totalValue,
+    sources: Object.keys(c.sources).join('|'),
+    topProduct: Object.keys(c.products).sort((a,b)=>c.products[b]-c.products[a])[0] || '',
+    firstSeenAt: c.firstSeenAt ? new Date(c.firstSeenAt).toISOString() : '',
+    lastSeenAt: c.lastSeenAt ? new Date(c.lastSeenAt).toISOString() : ''
+  }));
+  const csv = platformUtils.eventsToCSV(flat, ['phone','name','email','events','paid','totalValue','sources','topProduct','firstSeenAt','lastSeenAt']);
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="contatos-${new Date().toISOString().slice(0,10)}.csv"`);
+  res.send(csv);
+});
+
+// === BULK SEND com rate limit (anti-ban) ===
+const BULK_RATE_PER_DAY = Number(process.env.BULK_RATE_PER_DAY || 30);
+const BULK_DELAY_SEC = Number(process.env.BULK_DELAY_SEC || 60);
+let _bulkSentToday = []; // { sentAt }
+
+app.post("/api/bulk-send", async (req, res) => {
+  try {
+    const { recipients, message, dryRun } = req.body || {};
+    if (!Array.isArray(recipients) || recipients.length === 0) return res.status(400).json({ ok: false, error: "recipients[] obrigatorio" });
+    if (!message) return res.status(400).json({ ok: false, error: "message obrigatorio" });
+
+    // Rate limit diario
+    const dayAgo = Date.now() - 24 * 60 * 60 * 1000;
+    _bulkSentToday = _bulkSentToday.filter(s => s.sentAt > dayAgo);
+    const remaining = BULK_RATE_PER_DAY - _bulkSentToday.length;
+    if (recipients.length > remaining) {
+      return res.status(429).json({ ok: false, error: `Limite diario (${BULK_RATE_PER_DAY}) excedido. Restante hoje: ${remaining}.` });
+    }
+
+    if (dryRun) {
+      return res.json({ ok: true, dryRun: true, wouldSend: recipients.length, remainingToday: remaining, scheduledIds: [] });
+    }
+
+    // Agenda envios espacados pelo schedSave (worker existente cuida)
+    const arr = schedLoad();
+    const ids = [];
+    const now = Date.now();
+    recipients.forEach((phone, i) => {
+      const cleanPhone = String(phone).replace(/\D/g, '');
+      if (!cleanPhone) return;
+      const item = {
+        id: schedNewId(),
+        phone: cleanPhone,
+        message: String(message),
+        note: '[bulk-send]',
+        sendAt: now + (i * BULK_DELAY_SEC * 1000),
+        status: 'pending',
+        createdAt: now, sentAt: null, error: null,
+        source: 'bulk-send'
+      };
+      arr.push(item);
+      ids.push(item.id);
+      _bulkSentToday.push({ sentAt: now });
+    });
+    schedSave(arr);
+    res.json({ ok: true, scheduledCount: ids.length, scheduledIds: ids, spreadOverMin: Math.ceil(recipients.length * BULK_DELAY_SEC / 60), remainingToday: remaining - ids.length });
+  } catch (e) { res.status(500).json({ ok: false, error: e?.message }); }
+});
+
+app.get("/api/bulk-send/status", (req, res) => {
+  const dayAgo = Date.now() - 24 * 60 * 60 * 1000;
+  _bulkSentToday = _bulkSentToday.filter(s => s.sentAt > dayAgo);
+  res.json({ ok: true, sentToday: _bulkSentToday.length, dailyLimit: BULK_RATE_PER_DAY, remainingToday: BULK_RATE_PER_DAY - _bulkSentToday.length, delayBetweenMsgsSec: BULK_DELAY_SEC });
+});
+
+// === IA TEMPLATE SUGGEST (gera novo template via Claude) ===
+app.post("/api/ai/template-suggest", async (req, res) => {
+  try {
+    if (!process.env.ANTHROPIC_API_KEY) return res.status(503).json({ ok: false, error: "ANTHROPIC_API_KEY nao configurada" });
+    const { status, platform, productHint, tone } = req.body || {};
+    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const prompt = `Voce eh assistente da Vanessa Labastie da Speakers Play Academy (formacao em oratoria, NeuroHeart). Gere UM template curto de WhatsApp pra responder automaticamente quando:
+- Plataforma: ${platform || "qualquer"}
+- Status do evento: ${status || "qualquer"}
+${productHint ? '- Contexto produto: ' + productHint : ''}
+- Tom: ${tone || "calorosa, profissional, max 70 palavras"}
+
+Use variaveis {nome}, {produto}, {valor}, {hora} onde fizer sentido.
+Responda APENAS o texto do template, sem aspas, sem comentarios.`;
+    const resp = await client.messages.create({
+      model: "claude-haiku-4-5", max_tokens: 300,
+      messages: [{ role: "user", content: prompt }]
+    });
+    const suggestion = resp.content?.[0]?.text?.trim() || "";
+    res.json({ ok: true, template: suggestion, model: "claude-haiku-4-5" });
+  } catch (e) { res.status(500).json({ ok: false, error: e?.message }); }
+});
+
+// === AUTO-ARCHIVE (cron interno: marca conv inativa >30d) ===
+// Como o frontend gerencia isArchived em localStorage, esse endpoint expoe lista
+// de telefones candidatos a arquivar baseado em ultima atividade nos webhooks.
+app.get("/api/auto-archive/candidates", (req, res) => {
+  const days = Math.max(7, Math.min(365, Number(req.query.days) || 30));
+  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+  const all = aggregateContacts();
+  const candidates = all.filter(c => c.lastSeenAt < cutoff && c.lastSeenAt > 0);
+  res.json({ ok: true, days, cutoff, total: all.length, candidates: candidates.length, items: candidates.slice(0, 200) });
+});
+
+// ============================================================
 // INSIGHTS / HEALTH / EXPORT (v4.29)
 // ============================================================
 const SERVER_BOOT_AT = Date.now();
