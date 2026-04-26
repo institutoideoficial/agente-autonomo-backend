@@ -904,7 +904,47 @@ function renderPlaceholder(main, sec){
 }
 
 function showEmpty(){
-  document.getElementById('main').innerHTML='<div id="es"><div class="es-logo">SP</div><h3>SPEAKERS CRM</h3><p>Selecione uma conversa ou crie uma nova</p></div>';
+  var main = document.getElementById('main');
+  main.innerHTML = '<div id="es" style="overflow:auto;padding:30px;max-width:980px;margin:0 auto"><div style="text-align:center;margin-bottom:24px"><div class="es-logo" style="margin:0 auto 12px">SP</div><h3 style="font-size:22px">SPEAKERS CRM</h3><p style="color:var(--text2);font-size:13px">Mini dashboard — selecione conversa pra abrir chat</p></div><div id="home-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:18px"><div style="background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:18px;text-align:center;color:var(--text2)">⏳ carregando...</div></div><div style="text-align:center;color:var(--text2);font-size:11px">Auto-atualiza a cada 30s</div></div>';
+  loadHomeDashboard();
+  if(window._homeTimer) clearInterval(window._homeTimer);
+  window._homeTimer = setInterval(loadHomeDashboard, 30000);
+}
+
+async function loadHomeDashboard(){
+  try{
+    var r = await fetch('/api/insights/health');
+    if(!r.ok) return;
+    var d = await r.json();
+    var grid = document.getElementById('home-grid');
+    if(!grid) return;
+    var fmt = function(n){ return new Intl.NumberFormat('pt-BR').format(n||0); };
+    var fmtBR = function(n){ return 'R$ ' + new Intl.NumberFormat('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}).format(n||0); };
+    var card = function(label, val, hint, color){
+      return '<div style="background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:18px"><div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text2);margin-bottom:6px;font-weight:600">'+esc(label)+'</div><div style="font-size:28px;font-weight:800;color:'+(color||'var(--gold)')+';line-height:1;margin-bottom:4px">'+val+'</div><div style="font-size:11px;color:var(--text2)">'+esc(hint||'')+'</div></div>';
+    };
+    var bravosClr = d.bravos && d.bravos.ok ? '#10b981' : '#ef4444';
+    var bravosTxt = d.bravos && d.bravos.ok ? 'Conectado' : 'Offline';
+    var totalEvents = d.events && d.events.total || 0;
+    var html =
+      card('WhatsApp', '<span style="color:'+bravosClr+'">●</span> '+bravosTxt, d.bravos && d.bravos.uptimeSec ? 'uptime '+Math.round(d.bravos.uptimeSec/60)+' min' : '', bravosClr) +
+      card('Eventos recebidos', fmt(totalEvents), 'todas plataformas') +
+      card('Agendamentos', fmt(d.scheduled?.pending||0)+' pendentes', fmt(d.scheduled?.sent||0)+' enviados / '+fmt(d.scheduled?.failed||0)+' falhas') +
+      card('CRM uptime', Math.round((d.crm?.uptimeSec||0)/60)+' min', d.crm?.version || '');
+    if(d.events){
+      var byPlat = ['greenn','eduzz','hotmart','kiwify','generic','waCloud'].map(p =>
+        '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #1f1f1f"><span style="color:var(--text2);font-size:12px">'+p+'</span><span style="font-weight:700">'+fmt(d.events[p]||0)+'</span></div>'
+      ).join('');
+      html += '<div style="grid-column:1/-1;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:18px"><div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text2);margin-bottom:10px;font-weight:600">Eventos por plataforma</div>'+byPlat+'</div>';
+    }
+    if(d.ai && !d.ai.configured){
+      html += '<div style="grid-column:1/-1;background:#3a2e0a;border:1px solid var(--gold);border-radius:8px;padding:11px;color:var(--gold);font-size:12px">⚠️ IA nao configurada — adicionar ANTHROPIC_API_KEY no .env</div>';
+    }
+    if(d.google && !d.google.connected){
+      html += '<div style="grid-column:1/-1;background:#1a2840;border:1px solid #3b82f6;border-radius:8px;padding:11px;color:#3b82f6;font-size:12px">📅 Google '+ (d.google.configured ? 'configurado, faltando autorizar' : 'nao configurado') +' — Integracoes → Google</div>';
+    }
+    grid.innerHTML = html;
+  }catch(e){}
 }
 
 // === VIEWS: inbox / locked / archived (v4.2 estilo Waseller) ===
