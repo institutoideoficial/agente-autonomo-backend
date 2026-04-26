@@ -9,6 +9,7 @@ RUN npm ci --omit=dev --no-audit --no-fund
 
 # Codigo
 COPY index.js ./
+COPY lib ./lib
 COPY public ./public
 
 ENV NODE_ENV=production
