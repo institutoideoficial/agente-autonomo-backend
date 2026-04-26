@@ -202,7 +202,8 @@ app.post("/api/webhook/bravos", async (req, res) => {
 // ============================================================
 const fs = require("fs");
 const GREENN_FILE = process.env.GREENN_FILE || path.join(__dirname, "data", "greenn-events.json");
-const GREENN_TOKEN = process.env.GREENN_WEBHOOK_TOKEN || ""; // se vazio, nao valida (modo aberto)
+// v4.32: aceita ambos os nomes (GREENN_TOKEN preferido). Vazio = modo aberto.
+const GREENN_TOKEN = process.env.GREENN_TOKEN || process.env.GREENN_WEBHOOK_TOKEN || "";
 const GREENN_MAX_EVENTS = 200;
 fs.mkdirSync(path.dirname(GREENN_FILE), { recursive: true });
 
@@ -2008,11 +2009,16 @@ function eduzzRulesSave(arr) { try { fs.writeFileSync(EDUZZ_RULES_FILE, JSON.str
 
 app.post("/api/webhook/eduzz", (req, res) => {
   try {
-    // Auth: v3 HMAC OU v1 origin_secret
-    const okHmac = eduzzVerifyHmac(req);
-    const okOrigin = eduzzVerifyOrigin(req.body);
-    if (!okHmac && !okOrigin) {
-      return res.status(401).json({ ok: false, error: "assinatura invalida" });
+    // v4.32: Auth fix. Logica: se ALGUM secret esta setado, EXIGE pelo menos um valido.
+    // Antes: se ORIGIN_SECRET nao setado, eduzzVerifyOrigin retornava true -> bypassava HMAC.
+    const hmacEnabled = !!EDUZZ_HMAC_SECRET;
+    const originEnabled = !!EDUZZ_ORIGIN_SECRET;
+    if (hmacEnabled || originEnabled) {
+      const okHmac = hmacEnabled ? eduzzVerifyHmac(req) : false;
+      const okOrigin = originEnabled ? (req.body && req.body.origin_secret === EDUZZ_ORIGIN_SECRET) : false;
+      if (!okHmac && !okOrigin) {
+        return res.status(401).json({ ok: false, error: "assinatura invalida" });
+      }
     }
     const norm = normalizeEduzzPayload(req.body);
     const arr = eduzzLoad();
