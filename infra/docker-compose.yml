@@ -37,17 +37,17 @@ services:
       dockerfile: infra/Dockerfile
     container_name: crm
     restart: unless-stopped
+    # v4.32: env_file carrega TODAS as vars do .env automaticamente
+    # (incluindo GREENN_TOKEN, EDUZZ_HMAC_SECRET, HOTMART_HOTTOK, KIWIFY_TOKEN, BASIC_AUTH_*, etc)
+    env_file:
+      - .env
     environment:
       PORT: "3000"
       BRAVOS_URL: ${BRAVOS_URL:-http://bravos:3001}
       BRAVOS_TOKEN: ${API_TOKEN}
-      ANTHROPIC_API_KEY: 
-      GOOGLE_CLIENT_ID: 
-      GOOGLE_CLIENT_SECRET: 
-      GOOGLE_REDIRECT_URI: 
-      GOOGLE_AUTO_EVENT: false
-      GOOGLE_AUTO_EVENT_DELAY_HOURS: 24
-      GOOGLE_AUTO_EVENT_DURATION_MIN: 30${ANTHROPIC_API_KEY:-}
+      GOOGLE_AUTO_EVENT: ${GOOGLE_AUTO_EVENT:-false}
+      GOOGLE_AUTO_EVENT_DELAY_HOURS: ${GOOGLE_AUTO_EVENT_DELAY_HOURS:-24}
+      GOOGLE_AUTO_EVENT_DURATION_MIN: ${GOOGLE_AUTO_EVENT_DURATION_MIN:-30}
     volumes:
       - crm_data:/app/data
     expose:
