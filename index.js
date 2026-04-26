@@ -11,7 +11,42 @@ const PORT = process.env.PORT || 3000;
 const BRAVOS_URL = process.env.BRAVOS_URL || "https://bravos-whatsapp-api-production.up.railway.app";
 const BRAVOS_TOKEN = process.env.BRAVOS_TOKEN || "sp_a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2";
 
-app.use(express.json());
+// v4.32: capturar rawBody pra HMAC verification em webhooks (somente quando aplicavel)
+app.use(express.json({
+  verify: (req, _res, buf) => {
+    // somente armazena pra POSTs em /api/webhook/* (evita memoria desnecessaria)
+    if (req.method === 'POST' && req.url && req.url.startsWith('/api/webhook/')) {
+      req.rawBody = buf.toString('utf8');
+    }
+  },
+  limit: '2mb'
+}));
+
+// v4.32: Basic Auth opt-in pra UI/API (proteje quando expor publicamente)
+// Setar BASIC_AUTH_USER + BASIC_AUTH_PASS no .env. Excecoes: webhooks externos, healthcheck, SSE.
+const BASIC_AUTH_USER = process.env.BASIC_AUTH_USER || '';
+const BASIC_AUTH_PASS = process.env.BASIC_AUTH_PASS || '';
+const BASIC_AUTH_BYPASS = ['/health', '/api/webhook/', '/oauth/google/'];
+if (BASIC_AUTH_USER && BASIC_AUTH_PASS) {
+  app.use((req, res, next) => {
+    if (BASIC_AUTH_BYPASS.some(p => req.url.startsWith(p))) return next();
+    const h = req.headers.authorization || '';
+    if (h.startsWith('Basic ')) {
+      try {
+        const dec = Buffer.from(h.slice(6), 'base64').toString('utf8');
+        const i = dec.indexOf(':');
+        if (i > 0) {
+          const u = dec.slice(0, i), p = dec.slice(i + 1);
+          if (u === BASIC_AUTH_USER && p === BASIC_AUTH_PASS) return next();
+        }
+      } catch {}
+    }
+    res.setHeader('WWW-Authenticate', 'Basic realm="Imperador CRM", charset="UTF-8"');
+    res.status(401).send('Auth required');
+  });
+  console.log('[basic-auth] ativo pra usuario "' + BASIC_AUTH_USER + '"');
+}
+
 app.get("/", (req, res) => res.sendFile(path.join(__dirname, "public", "welcome.html")));
 app.get("/app", (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
 app.use(express.static(path.join(__dirname, "public")));
@@ -332,12 +367,16 @@ function expandGreennTemplate(tpl, ev) {
 
 app.post("/api/webhook/greenn", (req, res) => {
   try {
-    // Auth opcional
+    // Auth opcional via token simples
     if (GREENN_TOKEN) {
       const sent = req.headers["x-webhook-token"] || req.headers["authorization"]?.replace(/^Bearer\s+/i, "") || req.query.token;
       if (sent !== GREENN_TOKEN) {
         return res.status(401).json({ ok: false, error: "token invalido" });
       }
+    }
+    // v4.32: HMAC opt-in (setar GREENN_HMAC_SECRET no .env)
+    if (process.env.GREENN_HMAC_SECRET && !verifyHmacOptional(req, process.env.GREENN_HMAC_SECRET, ['x-greenn-signature','x-webhook-signature','x-hub-signature-256'])) {
+      return res.status(401).json({ ok: false, error: "hmac invalido" });
     }
     const norm = normalizeGreennPayload(req.body);
     const arr = greennLoad();
@@ -654,10 +693,45 @@ app.get("/api/integrations/generic/events", (req, res) => {
 // CONTATOS / BULK / IA TEMPLATES / AUTO-ARCHIVE (v4.31)
 // ============================================================
 
-// Helper: agrega contatos unicos cross-plataforma
-function aggregateContacts() {
+// v4.32: Tags persistentes cross-platform (server-side, indexadas por phone)
+const CONTACT_TAGS_FILE = process.env.CONTACT_TAGS_FILE || path.join(__dirname, "data", "contact-tags.json");
+function contactTagsLoad() {
+  try { return JSON.parse(require('fs').readFileSync(CONTACT_TAGS_FILE, 'utf8')); } catch { return {}; }
+}
+function contactTagsSave(map) {
+  try { require('fs').writeFileSync(CONTACT_TAGS_FILE, JSON.stringify(map || {}, null, 2)); }
+  catch (e) { console.error('[contact-tags]', e?.message); }
+}
+
+// v4.32: HMAC verification opcional pra webhooks. Suporta multiplos formatos comuns.
+// Ativa setando XXX_HMAC_SECRET no .env (ex: GREENN_HMAC_SECRET, EDUZZ_HMAC_SECRET, etc)
+function verifyHmacOptional(req, secret, headerNames) {
+  if (!secret) return true; // opt-in: se secret vazio, libera (compat)
+  const crypto = require('crypto');
+  let signature = '';
+  for (const h of headerNames) {
+    const v = req.headers[h.toLowerCase()];
+    if (v) { signature = String(v).replace(/^sha256=/i, '').replace(/^Bearer\s+/i, ''); break; }
+  }
+  if (!signature) return false;
+  // req.rawBody precisa estar disponivel - middleware adicionado abaixo
+  const raw = req.rawBody || JSON.stringify(req.body || {});
+  const expected = crypto.createHmac('sha256', secret).update(raw).digest('hex');
+  // const-time compare
+  try {
+    const a = Buffer.from(signature, 'hex');
+    const b = Buffer.from(expected, 'hex');
+    if (a.length !== b.length) return false;
+    return crypto.timingSafeEqual(a, b);
+  } catch { return false; }
+}
+
+// Helper: agrega contatos unicos cross-plataforma (v4.32: aceita {from,to} em ms)
+function aggregateContacts(opts) {
   const fsLib = require('fs');
   function tryLoad(file) { try { return JSON.parse(fsLib.readFileSync(file, 'utf8')); } catch { return []; } }
+  const fromTs = Number(opts && opts.from) || 0;
+  const toTs   = Number(opts && opts.to)   || (Date.now() + 1);
   const sources = [
     ['greenn', GREENN_FILE], ['eduzz', EDUZZ_FILE], ['hotmart', HOTMART_FILE],
     ['kiwify', KIWIFY_FILE], ['generic', GENERIC_FILE]
@@ -666,6 +740,8 @@ function aggregateContacts() {
   sources.forEach(([source, f]) => {
     tryLoad(f).forEach(ev => {
       if (!ev.phone) return;
+      if (fromTs && ev.receivedAt < fromTs) return;
+      if (toTs   && ev.receivedAt > toTs)   return;
       const k = ev.phone;
       if (!byPhone[k]) byPhone[k] = {
         phone: ev.phone, name: ev.name || '', email: ev.email || '',
@@ -694,26 +770,96 @@ function aggregateContacts() {
 }
 
 app.get("/api/contacts", (req, res) => {
-  const all = aggregateContacts();
+  const all = aggregateContacts({ from: req.query.from, to: req.query.to });
   const search = String(req.query.search || '').toLowerCase().trim();
   const filtered = search
     ? all.filter(c => [c.name, c.phone, c.email].join(' ').toLowerCase().includes(search))
     : all;
+  // v4.32: tags persistentes
+  const tagsMap = contactTagsLoad();
+  filtered.forEach(c => { c.tags = tagsMap[c.phone] || []; });
   const limit = Math.min(Number(req.query.limit) || 100, 1000);
-  res.json({ ok: true, total: all.length, count: filtered.length, items: filtered.slice(0, limit) });
+  res.json({ ok: true, total: all.length, count: filtered.length, items: filtered.slice(0, limit), filter: { from: req.query.from || null, to: req.query.to || null, search: search || null } });
+});
+
+// v4.32: Tags persistentes cross-platform (server-side)
+app.get("/api/contacts/:phone/tags", (req, res) => {
+  const phone = String(req.params.phone || '').replace(/\D/g, '');
+  if (!phone) return res.status(400).json({ ok: false, error: "phone invalido" });
+  const map = contactTagsLoad();
+  res.json({ ok: true, phone, tags: map[phone] || [] });
+});
+app.put("/api/contacts/:phone/tags", (req, res) => {
+  const phone = String(req.params.phone || '').replace(/\D/g, '');
+  if (!phone) return res.status(400).json({ ok: false, error: "phone invalido" });
+  let tags = req.body && req.body.tags;
+  if (typeof tags === 'string') tags = tags.split(',').map(s => s.trim()).filter(Boolean);
+  if (!Array.isArray(tags)) return res.status(400).json({ ok: false, error: "tags deve ser array ou string CSV" });
+  // sanitiza: max 20 tags, lowercase, alfanumerico+hifen+espaco, max 30 chars cada
+  tags = Array.from(new Set(tags.map(t => String(t).toLowerCase().replace(/[^a-z0-9\u00c0-\u017f\- ]/g, '').trim()).filter(t => t.length > 0 && t.length <= 30))).slice(0, 20);
+  const map = contactTagsLoad();
+  if (tags.length === 0) delete map[phone]; else map[phone] = tags;
+  contactTagsSave(map);
+  res.json({ ok: true, phone, tags });
+});
+// v4.32: Sync convs PC<->celular (server-side persistence opt-in)
+// Persiste o "estado da UI" (convs, flags, tags locais, templates, prefs) por bucket
+// Estrategia: last-write-wins simples (cada device manda updatedAt; merge no cliente)
+const CONV_SYNC_FILE = process.env.CONV_SYNC_FILE || path.join(__dirname, "data", "conv-sync.json");
+const CONV_SYNC_MAX_BYTES = 5 * 1024 * 1024; // 5MB cap
+function convSyncLoad() {
+  try { return JSON.parse(require('fs').readFileSync(CONV_SYNC_FILE, 'utf8')); }
+  catch { return { updatedAt: 0, payload: {} }; }
+}
+function convSyncSave(state) {
+  try {
+    const s = JSON.stringify(state || {});
+    if (s.length > CONV_SYNC_MAX_BYTES) throw new Error('payload muito grande (max 5MB)');
+    require('fs').writeFileSync(CONV_SYNC_FILE, s);
+  } catch (e) { console.error('[conv-sync]', e?.message); throw e; }
+}
+app.get("/api/conv/sync", (_req, res) => {
+  const s = convSyncLoad();
+  res.json({ ok: true, updatedAt: s.updatedAt, payload: s.payload });
+});
+app.post("/api/conv/sync", (req, res) => {
+  try {
+    const incoming = req.body || {};
+    const incomingAt = Number(incoming.updatedAt) || Date.now();
+    const current = convSyncLoad();
+    // Last-write-wins por bucket key (convs/flags/tags/templates/prefs)
+    const merged = { updatedAt: Math.max(current.updatedAt || 0, incomingAt), payload: { ...current.payload } };
+    if (incoming.payload && typeof incoming.payload === 'object') {
+      Object.entries(incoming.payload).forEach(([k, v]) => {
+        // se cliente esta mais novo, sobrescreve; senao mantem
+        if (incomingAt >= (current.updatedAt || 0)) merged.payload[k] = v;
+      });
+    }
+    convSyncSave(merged);
+    res.json({ ok: true, updatedAt: merged.updatedAt, bucketCount: Object.keys(merged.payload).length });
+  } catch (e) { res.status(500).json({ ok: false, error: e?.message }); }
+});
+
+app.get("/api/contacts/tags/all", (_req, res) => {
+  const map = contactTagsLoad();
+  const counts = {};
+  Object.values(map).forEach(arr => arr.forEach(t => { counts[t] = (counts[t] || 0) + 1; }));
+  res.json({ ok: true, total: Object.keys(map).length, tags: Object.entries(counts).sort((a,b)=>b[1]-a[1]).map(([tag, count]) => ({ tag, count })) });
 });
 
 app.get("/api/contacts.csv", (req, res) => {
-  const all = aggregateContacts();
+  const all = aggregateContacts({ from: req.query.from, to: req.query.to });
+  const tagsMap = contactTagsLoad();
   const flat = all.map(c => ({
     phone: c.phone, name: c.name, email: c.email,
     events: c.events, paid: c.paid, totalValue: c.totalValue,
     sources: Object.keys(c.sources).join('|'),
+    tags: (tagsMap[c.phone] || []).join('|'),
     topProduct: Object.keys(c.products).sort((a,b)=>c.products[b]-c.products[a])[0] || '',
     firstSeenAt: c.firstSeenAt ? new Date(c.firstSeenAt).toISOString() : '',
     lastSeenAt: c.lastSeenAt ? new Date(c.lastSeenAt).toISOString() : ''
   }));
-  const csv = platformUtils.eventsToCSV(flat, ['phone','name','email','events','paid','totalValue','sources','topProduct','firstSeenAt','lastSeenAt']);
+  const csv = platformUtils.eventsToCSV(flat, ['phone','name','email','events','paid','totalValue','sources','tags','topProduct','firstSeenAt','lastSeenAt']);
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="contatos-${new Date().toISOString().slice(0,10)}.csv"`);
   res.send(csv);
@@ -726,9 +872,16 @@ let _bulkSentToday = []; // { sentAt }
 
 app.post("/api/bulk-send", async (req, res) => {
   try {
-    const { recipients, message, dryRun } = req.body || {};
-    if (!Array.isArray(recipients) || recipients.length === 0) return res.status(400).json({ ok: false, error: "recipients[] obrigatorio" });
+    let { recipients, contacts, message, dryRun } = req.body || {};
+    // v4.32: aceita tambem "contacts:[{phone,name}]" da UI nova (alem de "recipients:[phone,...]")
+    if (!recipients && Array.isArray(contacts)) {
+      recipients = contacts.map(c => (c && (c.phone || c)) || '').filter(Boolean);
+    }
+    if (!Array.isArray(recipients) || recipients.length === 0) return res.status(400).json({ ok: false, error: "recipients[] (ou contacts[]) obrigatorio" });
     if (!message) return res.status(400).json({ ok: false, error: "message obrigatorio" });
+    // v4.32: expande {nome} pelo contact name quando disponivel
+    const nameByPhone = {};
+    if (Array.isArray(contacts)) contacts.forEach(c => { if (c && c.phone) nameByPhone[String(c.phone).replace(/\D/g, '')] = c.name || ''; });
 
     // Rate limit diario
     const dayAgo = Date.now() - 24 * 60 * 60 * 1000;
@@ -749,10 +902,20 @@ app.post("/api/bulk-send", async (req, res) => {
     recipients.forEach((phone, i) => {
       const cleanPhone = String(phone).replace(/\D/g, '');
       if (!cleanPhone) return;
+      // v4.32: expande {nome}/{telefone}/{hora}/{dia} pra cada destinatario
+      const nm = (nameByPhone[cleanPhone] || '').split(' ')[0] || '';
+      const now = new Date();
+      const hora = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
+      const dia = String(now.getDate()).padStart(2,'0') + '/' + String(now.getMonth()+1).padStart(2,'0');
+      const expanded = String(message)
+        .replace(/\{nome\}/g, nm)
+        .replace(/\{telefone\}/g, cleanPhone)
+        .replace(/\{hora\}/g, hora)
+        .replace(/\{dia\}/g, dia);
       const item = {
         id: schedNewId(),
         phone: cleanPhone,
-        message: String(message),
+        message: expanded,
         note: '[bulk-send]',
         sendAt: now + (i * BULK_DELAY_SEC * 1000),
         status: 'pending',
@@ -764,7 +927,8 @@ app.post("/api/bulk-send", async (req, res) => {
       _bulkSentToday.push({ sentAt: now });
     });
     schedSave(arr);
-    res.json({ ok: true, scheduledCount: ids.length, scheduledIds: ids, spreadOverMin: Math.ceil(recipients.length * BULK_DELAY_SEC / 60), remainingToday: remaining - ids.length });
+    // v4.32: alias "scheduled" pra compatibilidade com UI nova que esperava esse campo
+    res.json({ ok: true, scheduled: ids.length, scheduledCount: ids.length, scheduledIds: ids, spreadOverMin: Math.ceil(recipients.length * BULK_DELAY_SEC / 60), remainingToday: remaining - ids.length });
   } catch (e) { res.status(500).json({ ok: false, error: e?.message }); }
 });
 
@@ -777,13 +941,15 @@ app.get("/api/bulk-send/status", (req, res) => {
 // === IA TEMPLATE SUGGEST (gera novo template via Claude) ===
 app.post("/api/ai/template-suggest", async (req, res) => {
   try {
-    if (!process.env.ANTHROPIC_API_KEY) return res.status(503).json({ ok: false, error: "ANTHROPIC_API_KEY nao configurada" });
-    const { status, platform, productHint, tone } = req.body || {};
+    if (!process.env.ANTHROPIC_API_KEY) return res.status(503).json({ ok: false, error: "ANTHROPIC_API_KEY nao configurada", hint: "no painel do CRM va em Integracoes pra configurar" });
+    // v4.32: aceita "context" da UI nova (alias pra productHint)
+    const { status, platform, productHint, context, tone } = req.body || {};
+    const ctx = productHint || context || '';
     const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
     const prompt = `Voce eh assistente da Vanessa Labastie da Speakers Play Academy (formacao em oratoria, NeuroHeart). Gere UM template curto de WhatsApp pra responder automaticamente quando:
 - Plataforma: ${platform || "qualquer"}
 - Status do evento: ${status || "qualquer"}
-${productHint ? '- Contexto produto: ' + productHint : ''}
+${ctx ? '- Contexto produto/oferta: ' + ctx : ''}
 - Tom: ${tone || "calorosa, profissional, max 70 palavras"}
 
 Use variaveis {nome}, {produto}, {valor}, {hora} onde fizer sentido.
@@ -851,8 +1017,20 @@ app.get("/api/export/all.csv", (req, res) => {
     const all = [];
     [['greenn', GREENN_FILE], ['eduzz', EDUZZ_FILE], ['hotmart', HOTMART_FILE], ['kiwify', KIWIFY_FILE], ['generic', GENERIC_FILE]]
       .forEach(([source, f]) => tryLoad(f).forEach(e => all.push({ source, ...e })));
-    all.sort((a, b) => (b.receivedAt || 0) - (a.receivedAt || 0));
-    const csv = platformUtils.eventsToCSV(all, ['receivedAt', 'source', 'event', 'status', 'statusLabel', 'name', 'phone', 'email', 'productName', 'total', 'currency', 'transactionId', 'paymentType', 'installments']);
+    // v4.32: filtros opcionais ?from=ms&to=ms&source=greenn&status=paid
+    const fromTs = Number(req.query.from) || 0;
+    const toTs   = Number(req.query.to)   || (Date.now() + 1);
+    const srcFilter = String(req.query.source || '').toLowerCase().trim();
+    const stFilter  = String(req.query.status || '').toLowerCase().trim();
+    let filtered = all.filter(e => {
+      if (fromTs && (e.receivedAt || 0) < fromTs) return false;
+      if (toTs && (e.receivedAt || 0) > toTs) return false;
+      if (srcFilter && e.source !== srcFilter) return false;
+      if (stFilter && String(e.status || '').toLowerCase() !== stFilter) return false;
+      return true;
+    });
+    filtered.sort((a, b) => (b.receivedAt || 0) - (a.receivedAt || 0));
+    const csv = platformUtils.eventsToCSV(filtered, ['receivedAt', 'source', 'event', 'status', 'statusLabel', 'name', 'phone', 'email', 'productName', 'total', 'currency', 'transactionId', 'paymentType', 'installments']);
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="imperador-all-events-${new Date().toISOString().slice(0, 10)}.csv"`);
     res.send(csv);
@@ -1384,6 +1562,10 @@ app.post("/api/webhook/kiwify", (req, res) => {
     if (!kiwifyVerifyAuth(req)) {
       return res.status(401).json({ ok: false, error: "token invalido" });
     }
+    // v4.32: HMAC opt-in (setar KIWIFY_HMAC_SECRET no .env)
+    if (process.env.KIWIFY_HMAC_SECRET && !verifyHmacOptional(req, process.env.KIWIFY_HMAC_SECRET, ['x-kiwify-signature','x-webhook-signature','x-hub-signature-256'])) {
+      return res.status(401).json({ ok: false, error: "hmac invalido" });
+    }
     const norm = normalizeKiwifyPayload(req.body);
     const arr = kiwifyLoad();
     arr.push(norm);
@@ -1562,13 +1744,17 @@ function hotmartVerifyAuth(req) {
     if (sent && sent === HOTMART_HOTTOK) return true;
     if (!HOTMART_HMAC_SECRET) return false; // so tem hottok config, e nao bateu
   }
-  // 2. Se HOTMART_HMAC_SECRET setado, verifica header x-hotmart-hmac-sha256
+  // 2. Se HOTMART_HMAC_SECRET setado, verifica header x-hotmart-hmac-sha256 (v4.32: usa rawBody)
   if (HOTMART_HMAC_SECRET) {
-    const sig = req.headers["x-hotmart-hmac-sha256"] || req.headers["x-signature"] || "";
+    const sig = String(req.headers["x-hotmart-hmac-sha256"] || req.headers["x-signature"] || "").replace(/^sha256=/i, '');
     if (!sig) return false;
-    const body = JSON.stringify(req.body || {});
+    const body = req.rawBody || JSON.stringify(req.body || {});
     const expected = crypto.createHmac("sha256", HOTMART_HMAC_SECRET).update(body).digest("hex");
-    try { return crypto.timingSafeEqual(Buffer.from(sig, "utf8"), Buffer.from(expected, "utf8")); } catch { return false; }
+    try {
+      const a = Buffer.from(sig, "hex"), b = Buffer.from(expected, "hex");
+      if (a.length !== b.length) return false;
+      return crypto.timingSafeEqual(a, b);
+    } catch { return false; }
   }
   // 3. Nem hottok nem HMAC configurados = modo aberto
   return true;
@@ -1790,11 +1976,16 @@ function normalizeEduzzPayload(raw) {
 
 function eduzzVerifyHmac(req) {
   if (!EDUZZ_HMAC_SECRET) return true; // sem secret = aceita
-  const sig = req.headers["x-signature"] || req.headers["x-eduzz-signature"] || "";
+  const sig = String(req.headers["x-signature"] || req.headers["x-eduzz-signature"] || "").replace(/^sha256=/i, '');
   if (!sig) return false;
-  const body = JSON.stringify(req.body || {});
+  // v4.32: usa rawBody pra HMAC determinstico
+  const body = req.rawBody || JSON.stringify(req.body || {});
   const expected = crypto.createHmac("sha256", EDUZZ_HMAC_SECRET).update(body).digest("hex");
-  return crypto.timingSafeEqual(Buffer.from(sig, "utf8"), Buffer.from(expected, "utf8"));
+  try {
+    const a = Buffer.from(sig, "hex"), b = Buffer.from(expected, "hex");
+    if (a.length !== b.length) return false;
+    return crypto.timingSafeEqual(a, b);
+  } catch { return false; }
 }
 function eduzzVerifyOrigin(body) {
   if (!EDUZZ_ORIGIN_SECRET) return true;

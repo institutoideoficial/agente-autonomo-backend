@@ -1085,6 +1085,13 @@ function renderNotifPage(main){
       '<div style="font-size:14px">'+swReg+'</div>'+
       '<div style="font-size:11px;color:var(--text2);margin-top:6px">Em PWA instalado mobile, recebe push mesmo com app fechado.</div>'+
     '</div>'+
+    '<div style="background:var(--panel);border-radius:10px;padding:18px;margin-bottom:14px;border-left:3px solid '+(typeof _syncEnabled!=='undefined' && _syncEnabled?'#10b981':'#666')+'">'+
+      '<div style="font-size:13px;color:var(--text2);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Sync entre dispositivos</div>'+
+      '<div style="font-size:14px;font-weight:700;color:'+(typeof _syncEnabled!=='undefined' && _syncEnabled?'#10b981':'#666')+'">'+(typeof _syncEnabled!=='undefined' && _syncEnabled?'✅ Ativo':'⏸ Pausado')+'</div>'+
+      '<div style="font-size:11px;color:var(--text2);margin-top:6px">Conversas, tags, templates e prefs sincronizam PC ↔ celular automaticamente. Push a cada 10s, pull a cada 30s.</div>'+
+      '<button class="bok" style="margin-top:10px" onclick="toggleSync();renderNotifPage(document.getElementById(\'main\'))">'+(typeof _syncEnabled!=='undefined' && _syncEnabled?'⏸ Pausar sync':'▶ Ativar sync')+'</button>'+
+      ((typeof _lastSyncAt!=='undefined' && _lastSyncAt)?'<div style="font-size:11px;color:var(--text2);margin-top:6px">Ultima sync: '+new Date(_lastSyncAt).toLocaleString('pt-BR')+'</div>':'')+
+    '</div>'+
     '<div style="background:var(--panel);border-radius:10px;padding:18px;margin-bottom:14px">'+
       '<div style="font-size:13px;color:var(--text2);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px">Tipos de notificacao</div>'+
       '<label style="display:flex;align-items:center;gap:10px;padding:8px 0;cursor:pointer"><input type="checkbox" '+(notifPrefGet('msg')?'checked':'')+' onchange="notifPrefSet(\'msg\',this.checked)" style="width:18px;height:18px;accent-color:var(--gold)"><span>📥 Mensagens recebidas</span></label>'+
@@ -3288,17 +3295,33 @@ function renderKanban(main){
   });
 }
 
-// v4.32: Contatos cross-platform via /api/contacts (agrega Greenn+Eduzz+Hotmart+Kiwify+generic)
-var _contactsState = { items: [], q: '', sort: 'lastSeen' };
+// v4.32: Contatos cross-platform via /api/contacts (agrega Greenn+Eduzz+Hotmart+Kiwify+generic) + filtros periodo + tags
+var _contactsState = { items: [], q: '', sort: 'lastSeen', from: '', to: '' };
 async function renderContacts(main){
   main.style.cssText='padding:16px;overflow-y:auto;flex:1;display:block';
   main.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text2)">⏳ carregando contatos...</div>';
+  await contactsRefetch();
+  renderContactsList(main);
+}
+async function contactsRefetch(){
+  var qs = [];
+  if(_contactsState.from) qs.push('from='+ new Date(_contactsState.from).getTime());
+  if(_contactsState.to)   qs.push('to='+ (new Date(_contactsState.to).getTime()+86400000)); // inclusive end-of-day
+  qs.push('limit=1000');
   try{
-    var r = await fetch('/api/contacts');
+    var r = await fetch('/api/contacts?'+qs.join('&'));
     var d = await r.json();
     _contactsState.items = (d && d.items) || [];
   }catch(e){ _contactsState.items = []; }
-  renderContactsList(main);
+}
+function contactsApplyDates(){
+  _contactsState.from = (document.getElementById('cont-from')||{}).value || '';
+  _contactsState.to   = (document.getElementById('cont-to')||{}).value || '';
+  renderContacts(document.getElementById('main'));
+}
+function contactsClearDates(){
+  _contactsState.from = ''; _contactsState.to = '';
+  renderContacts(document.getElementById('main'));
 }
 function renderContactsList(main){
   var fmtBR = function(v){ return 'R$ ' + Number(v||0).toFixed(2).replace('.',','); };
@@ -3322,8 +3345,17 @@ function renderContactsList(main){
       '<h2 style="font-size:18px">Contatos cross-platform ('+_contactsState.items.length+')</h2>'+
       '<div style="display:flex;gap:8px">'+
         '<button class="bok" onclick="openModal(\'mnew\')">+ Novo</button>'+
-        '<a href="/api/contacts.csv" download="contatos.csv" class="bok" style="text-decoration:none;background:#10b981;color:#fff">⬇ CSV</a>'+
+        '<a href="/api/contacts.csv'+ ((_contactsState.from||_contactsState.to) ? ('?'+(_contactsState.from?'from='+new Date(_contactsState.from).getTime():'')+(_contactsState.to?'&to='+(new Date(_contactsState.to).getTime()+86400000):'')) : '') +'" download="contatos.csv" class="bok" style="text-decoration:none;background:#10b981;color:#fff">⬇ CSV'+((_contactsState.from||_contactsState.to)?' (filtrado)':'')+'</a>'+
+        '<a href="/api/export/all.csv'+ ((_contactsState.from||_contactsState.to) ? ('?'+(_contactsState.from?'from='+new Date(_contactsState.from).getTime():'')+(_contactsState.to?'&to='+(new Date(_contactsState.to).getTime()+86400000):'')) : '') +'" download="eventos.csv" class="bok" style="text-decoration:none;background:#3b82f6;color:#fff">⬇ Eventos CSV</a>'+
       '</div>'+
+    '</div>'+
+    '<div style="background:var(--panel);padding:10px 14px;border-radius:8px;margin-bottom:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">'+
+      '<span style="font-size:12px;color:var(--text2);font-weight:600">📅 Periodo:</span>'+
+      '<input type="date" id="cont-from" value="'+esc(_contactsState.from)+'" style="background:var(--panel2);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:6px;font-size:12px">'+
+      '<span style="color:var(--text2);font-size:12px">ate</span>'+
+      '<input type="date" id="cont-to" value="'+esc(_contactsState.to)+'" style="background:var(--panel2);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:6px;font-size:12px">'+
+      '<button class="bok" style="font-size:11px;padding:4px 10px" onclick="contactsApplyDates()">Aplicar</button>'+
+      ((_contactsState.from||_contactsState.to)?'<button class="bok" style="font-size:11px;padding:4px 10px;background:#444;color:#fff" onclick="contactsClearDates()">Limpar</button>':'')+
     '</div>'+
     '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:14px">'+
       '<div style="background:var(--panel);padding:12px;border-radius:8px;border-left:3px solid var(--gold)"><div style="font-size:11px;color:var(--text2);text-transform:uppercase">Total contatos</div><div style="font-size:22px;font-weight:800;color:var(--gold)">'+_contactsState.items.length+'</div></div>'+
@@ -3346,24 +3378,56 @@ function renderContactsList(main){
       var prods = Object.keys(c.products||{}).slice(0,2).join(', ') || '—';
       var when = c.lastSeenAt ? new Date(c.lastSeenAt).toLocaleDateString('pt-BR') : '—';
       var paidColor = (c.paid||0)>0 ? '#10b981' : 'var(--text2)';
-      html += '<div style="background:var(--panel);border-radius:10px;padding:13px;margin-bottom:7px;display:flex;align-items:center;gap:11px;border-left:3px solid var(--gold);cursor:pointer" onclick="abrirContatoDoCross(\''+esc(c.phone||'')+'\',\''+esc((c.name||'').replace(/\x27/g,""))+'\')">'+
-        '<div style="width:44px;height:44px;border-radius:50%;background:'+cr(c.name||c.phone||'?')+';display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;color:#fff;flex-shrink:0">'+av(c.name||c.phone||'?')+'</div>'+
-        '<div style="flex:1;min-width:0">'+
-          '<div style="font-size:14px;font-weight:600;display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+esc(c.name||'(sem nome)')+
-            (c.email?'<span style="font-size:11px;color:var(--text2);font-weight:400">'+esc(c.email)+'</span>':'')+
+      var tags = Array.isArray(c.tags) ? c.tags : [];
+      var tagsHtml = tags.length
+        ? tags.map(function(t){ return '<span style="background:#7c3aed33;color:#a78bfa;font-size:10px;padding:2px 7px;border-radius:10px;font-weight:600">'+esc(t)+'</span>'; }).join(' ')
+        : '<span style="color:var(--text2);font-size:10px;font-style:italic">sem tags</span>';
+      html += '<div style="background:var(--panel);border-radius:10px;padding:13px;margin-bottom:7px;border-left:3px solid var(--gold)">'+
+        '<div style="display:flex;align-items:center;gap:11px;cursor:pointer" onclick="abrirContatoDoCross(\''+esc(c.phone||'')+'\',\''+esc((c.name||'').replace(/\x27/g,""))+'\')">'+
+          '<div style="width:44px;height:44px;border-radius:50%;background:'+cr(c.name||c.phone||'?')+';display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;color:#fff;flex-shrink:0">'+av(c.name||c.phone||'?')+'</div>'+
+          '<div style="flex:1;min-width:0">'+
+            '<div style="font-size:14px;font-weight:600;display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+esc(c.name||'(sem nome)')+
+              (c.email?'<span style="font-size:11px;color:var(--text2);font-weight:400">'+esc(c.email)+'</span>':'')+
+            '</div>'+
+            '<div style="font-size:12px;color:var(--text2);margin-top:2px">'+(c.phone?'+'+c.phone:'Sem numero')+' &middot; '+srcs+'</div>'+
+            '<div style="font-size:11px;color:var(--text2);margin-top:2px">📦 '+esc(prods)+' &middot; ult: '+when+'</div>'+
           '</div>'+
-          '<div style="font-size:12px;color:var(--text2);margin-top:2px">'+(c.phone?'+'+c.phone:'Sem numero')+' &middot; '+srcs+'</div>'+
-          '<div style="font-size:11px;color:var(--text2);margin-top:2px">📦 '+esc(prods)+' &middot; ult: '+when+'</div>'+
+          '<div style="text-align:right;flex-shrink:0">'+
+            '<div style="font-size:16px;font-weight:800;color:'+paidColor+'">'+fmtBR(c.totalValue)+'</div>'+
+            '<div style="font-size:11px;color:var(--text2)">'+(c.paid||0)+' paga'+((c.paid||0)===1?'':'s')+' &middot; '+(c.events||0)+' ev</div>'+
+          '</div>'+
         '</div>'+
-        '<div style="text-align:right;flex-shrink:0">'+
-          '<div style="font-size:16px;font-weight:800;color:'+paidColor+'">'+fmtBR(c.totalValue)+'</div>'+
-          '<div style="font-size:11px;color:var(--text2)">'+(c.paid||0)+' paga'+((c.paid||0)===1?'':'s')+' &middot; '+(c.events||0)+' ev</div>'+
+        '<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);display:flex;gap:6px;align-items:center;flex-wrap:wrap" onclick="event.stopPropagation()">'+
+          '<span style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px">Tags:</span>'+
+          tagsHtml+
+          '<button class="bok" style="font-size:10px;padding:3px 8px;margin-left:auto" onclick="contactsTagsEdit(\''+esc(c.phone||'')+'\')">+ tags</button>'+
         '</div>'+
       '</div>';
     });
   }
   main.innerHTML = html;
 }
+// v4.32: edita tags persistentes do contato cross-platform
+async function contactsTagsEdit(phone){
+  if(!phone) return;
+  var c = (_contactsState.items||[]).find(function(x){return x.phone===phone;}) || {};
+  var atuais = (Array.isArray(c.tags)?c.tags:[]).join(', ');
+  var novo = prompt('Tags do contato '+(c.name||phone)+'\n\nSepara por vírgula. Sugestões: vip, lead, comprou, follow-up, sem-resposta, mentoria, curso\n\n(deixa vazio pra remover todas)', atuais);
+  if(novo===null) return;
+  try{
+    var r = await fetch('/api/contacts/'+encodeURIComponent(phone)+'/tags', {
+      method:'PUT', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ tags: novo })
+    });
+    var d = await r.json();
+    if(!d.ok){ alert('Erro: '+(d.error||'?')); return; }
+    // atualiza estado local e re-renderiza
+    if(c) c.tags = d.tags||[];
+    renderContactsList(document.getElementById('main'));
+    if(typeof toast==='function') toast('✓ Tags salvas');
+  }catch(e){ alert('Erro: '+e.message); }
+}
+
 // Abre conversa do contato cross-platform: tenta achar conv local pelo telefone, senao cria
 function abrirContatoDoCross(phone, name){
   if(!phone){ alert('Sem telefone — abre manual em + Novo'); return; }
@@ -3874,6 +3938,84 @@ setTimeout(checkStatus,2000);
   }
   // Pede permissao na primeira vez (suave)
   setTimeout(function(){ notifPermission(); }, 4000);
+
+  // === v4.32: Sync convs entre dispositivos (PC<->celular) ===
+  // Estado salvo no servidor por bucket. Last-write-wins simples por updatedAt local.
+  var SYNC_KEYS = ['imp_convs_v1','imp_flags_v1','imp_pills_v1','imp_qrs_v1','imp_tags_v1','imp_trash_v1','imp_notif_v1','imp_audio_v1','imp_theme_v1'];
+  var _syncDirty = false, _lastSyncAt = 0, _syncEnabled = true;
+  try{ _syncEnabled = localStorage.getItem('imp_sync_off') !== '1'; }catch(e){}
+  window.toggleSync = function(){
+    _syncEnabled = !_syncEnabled;
+    try{ localStorage.setItem('imp_sync_off', _syncEnabled?'0':'1'); }catch(e){}
+    toast('Sync '+(_syncEnabled?'ativado':'desativado'));
+    if(_syncEnabled) syncPullFromServer();
+  };
+  function syncCollect(){
+    var payload = {};
+    SYNC_KEYS.forEach(function(k){
+      try{ var v = localStorage.getItem(k); if(v!==null) payload[k] = v; }catch(e){}
+    });
+    return payload;
+  }
+  function syncApply(payload){
+    if(!payload || typeof payload!=='object') return;
+    var changed = false;
+    Object.entries(payload).forEach(function(kv){
+      var k = kv[0], v = kv[1];
+      if(SYNC_KEYS.indexOf(k)<0) return;
+      try{
+        var cur = localStorage.getItem(k);
+        if(cur !== v){ localStorage.setItem(k, v); changed = true; }
+      }catch(e){}
+    });
+    return changed;
+  }
+  async function syncPullFromServer(){
+    if(!_syncEnabled) return;
+    try{
+      var r = await fetch('/api/conv/sync');
+      if(!r.ok) return;
+      var d = await r.json();
+      if(d && d.payload){
+        var changed = syncApply(d.payload);
+        _lastSyncAt = d.updatedAt || Date.now();
+        if(changed){
+          // recarrega in-memory state das estruturas-chave
+          try{ if(typeof loadTemplates==='function') window.QRS = loadTemplates(); }catch(e){}
+          try{ window.impFlags = Object.assign({archived:[],locked:[]}, JSON.parse(localStorage.getItem('imp_flags_v1')||'{}')); }catch(e){}
+          if(typeof renderSB==='function') renderSB();
+          if(typeof renderPinned==='function') renderPinned();
+          console.log('[sync] pulled changes from server');
+        }
+      }
+    }catch(e){ /* offline ok */ }
+  }
+  async function syncPushToServer(){
+    if(!_syncEnabled) return;
+    try{
+      var payload = syncCollect();
+      var now = Date.now();
+      await fetch('/api/conv/sync', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ updatedAt: now, payload: payload })
+      });
+      _lastSyncAt = now; _syncDirty = false;
+    }catch(e){ /* offline retry depois */ }
+  }
+  // Pull inicial 2s apos load
+  setTimeout(syncPullFromServer, 2000);
+  // Detecta mudancas localStorage e marca dirty (debounce 5s pra push)
+  var _origSetItem = Storage.prototype.setItem;
+  Storage.prototype.setItem = function(k,v){
+    var ret = _origSetItem.apply(this, arguments);
+    if(SYNC_KEYS.indexOf(k)>=0) _syncDirty = true;
+    return ret;
+  };
+  // Push periodico (a cada 10s se dirty) + pull a cada 30s pra outros devices
+  setInterval(function(){ if(_syncDirty) syncPushToServer(); }, 10000);
+  setInterval(syncPullFromServer, 30000);
+  // Push tambem ao fechar/sair
+  window.addEventListener('beforeunload', function(){ if(_syncDirty) navigator.sendBeacon && navigator.sendBeacon('/api/conv/sync', JSON.stringify({ updatedAt: Date.now(), payload: syncCollect() })); });
 
   // v4.32: notifica eventos de plataforma de pagamento (respeita prefs em /notif)
   function _notifPref(k){ try{ var p=JSON.parse(localStorage.getItem('imp_notif_v1')||'{}'); return k in p ? p[k] : true; }catch(e){ return true; } }
