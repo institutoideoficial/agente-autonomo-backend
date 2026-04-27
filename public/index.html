@@ -2118,6 +2118,8 @@ function kiwifyCsvUrl(){
 // === WHATSAPP CLOUD API (v4.23) ===
 async function fetchWaCloudStatus(){ try{ var r=await fetch('/api/integrations/wa-cloud/status'); return await r.json(); }catch(e){ return null; } }
 async function fetchBravosStatus(){ try{ var r=await fetch('/api/insights/health'); var d=await r.json(); return d.bravos||null; }catch(e){ return null; } }
+async function fetchInstagramStatus(){ try{ var r=await fetch('/api/integrations/instagram/status'); return await r.json(); }catch(e){ return null; } }
+async function fetchInstagramEvents(limit){ try{ var r=await fetch('/api/integrations/instagram/events?limit='+(limit||30)); var d=await r.json(); return d.items||[]; }catch(e){ return []; } }
 async function fetchWaCloudEvents(limit){ try{ var r=await fetch('/api/integrations/wa-cloud/events?limit='+(limit||30)); var d=await r.json(); return d.items||[]; }catch(e){ return []; } }
 async function waCloudTest(){
   var phone = prompt('Telefone destino (so numeros, com DDI - ex: 5511999990001):');
@@ -2221,6 +2223,7 @@ async function renderIntegracoesPage(main){
   var kiwifySt = await fetchKiwifyStatus();
   var googleSt = await fetchGoogleStatus();
   var waCloudSt = await fetchWaCloudStatus();
+  var igSt = await fetchInstagramStatus();
 
   var header = '<div class="int-page">'+
     '<h2>🔌 Integrações</h2>'+
@@ -2244,7 +2247,76 @@ async function renderIntegracoesPage(main){
       '<button class="plt-tab '+(platform==='wacloud'?'active':'')+'" onclick="intPlatformSet(\'wacloud\')">'+
         '💬 WhatsApp '+(waCloudSt&&waCloudSt.configured?'<span class="plt-count" style="background:#10b98133;color:#10b981">●</span>':'<span class="plt-count" style="background:#3a1a1a;color:#ef4444">!</span>')+
       '</button>'+
+      '<button class="plt-tab '+(platform==='instagram'?'active':'')+'" onclick="intPlatformSet(\'instagram\')">'+
+        '📷 Instagram '+(igSt&&igSt.connected?'<span class="plt-count" style="background:#e1306c33;color:#e1306c">●</span>':'<span class="plt-count">'+(igSt?.eventsCount||0)+'</span>')+
+      '</button>'+
     '</div>';
+
+  if(platform === 'instagram'){
+    var igEvents = igSt && igSt.connected ? await fetchInstagramEvents(20) : [];
+    var igStatusBadge = igSt && igSt.connected
+      ? '<span style="color:#e1306c">✓ Conectado</span> &middot; @<code style="color:var(--gold)">'+esc(igSt.igUsername||'?')+'</code> &middot; Pagina: <strong>'+esc(igSt.pageName||'?')+'</strong> &middot; expira em <strong>'+(igSt.expiresInDays||'?')+'d</strong>'
+      : igSt && igSt.configured
+        ? '<span style="color:#f59e0b">⚠ Nao conectado</span> - clica "Conectar" abaixo'
+        : '<span style="color:#ef4444">⚠ Nao configurado</span> - precisa setar META_APP_ID + META_APP_SECRET no .env';
+
+    header += '<div class="int-card" style="border-left:4px solid #e1306c">'+
+      '<h3>📷 Instagram DMs (Meta Graph API) <span class="int-badge">'+(igSt&&igSt.connected?'Conectado':'Pendente')+'</span></h3>'+
+      '<div class="int-sub" style="margin-bottom:14px">DMs do Instagram chegam aqui automatico. Sofia (agent) responde se modo producao. Janela 24h depois do cliente mandar (regra Meta).</div>'+
+      '<div class="int-row"><strong>Status:</strong>&nbsp;'+igStatusBadge+'</div>'+
+      '<div class="int-row"><strong>Webhook URL (cole no Meta):</strong><div class="int-url" id="ig-url">'+esc(igSt?.webhookUrl||location.origin+'/api/webhook/instagram')+'</div><button class="int-cp" onclick="navigator.clipboard.writeText(document.getElementById(\'ig-url\').textContent).then(function(){toast(\'URL copiada\')})">Copiar</button></div>'+
+      '<div class="int-row"><strong>Verify Token:</strong><div class="int-url" id="ig-vt">'+esc(igSt?.verifyToken||'imperador-ig-verify-2026')+'</div><button class="int-cp" onclick="navigator.clipboard.writeText(document.getElementById(\'ig-vt\').textContent).then(function(){toast(\'Token copiado\')})">Copiar</button></div>'+
+      '<div class="int-row"><strong>App ID:</strong>&nbsp;<code>'+esc(igSt?.appId||'(nao configurado)')+'</code></div>'+
+      '<div class="int-row"><strong>Eventos recebidos:</strong>&nbsp;'+(igSt?.eventsCount||0)+'</div>'+
+      '<div class="int-row" style="margin-top:14px">'+
+        (igSt && igSt.connected
+          ? '<button class="g-btn" style="background:#444;color:#fff" onclick="if(confirm(\'Desconectar Instagram?\')){fetch(\'/api/integrations/instagram/disconnect\',{method:\'POST\'}).then(function(){renderIntegracoesPage(document.getElementById(\'main\'))})}">⏏ Desconectar</button>'
+          : (igSt && igSt.configured
+              ? '<a class="g-btn" style="background:#e1306c;color:#fff;text-decoration:none;display:inline-block;padding:8px 16px;border-radius:6px" href="/oauth/instagram/authorize">🔗 Conectar Instagram</a>'
+              : '<div style="color:#ef4444;font-size:12px">⚠ Setar META_APP_ID + META_APP_SECRET no .env primeiro (use o mesmo app Meta do WhatsApp Cloud)</div>'
+            )
+        )+
+      '</div>'+
+    '</div>';
+
+    if(!igSt || !igSt.connected){
+      header += '<div class="int-card">'+
+        '<h3>📋 Como configurar</h3>'+
+        '<div class="g-setup-steps">'+
+          '<ol style="line-height:1.8">'+
+            '<li>Acesse <a href="https://developers.facebook.com/apps" target="_blank" style="color:var(--gold)">developers.facebook.com/apps</a></li>'+
+            '<li>Use o app <strong>Imperador CRM</strong> (ID 931506789683480) ou cria novo tipo Empresa</li>'+
+            '<li>Em <strong>Configuracoes do app → Basico</strong>: copia <code>App ID</code> e <code>App Secret</code></li>'+
+            '<li>No servidor (.env): <code>META_APP_ID=...</code> e <code>META_APP_SECRET=...</code> + restart</li>'+
+            '<li>No app Meta: <strong>Adicionar produto → Instagram → Configurar</strong></li>'+
+            '<li>Em <strong>OAuth Redirect URIs</strong>: adicione <code>'+esc(location.origin)+'/oauth/instagram/callback</code></li>'+
+            '<li>Em <strong>Webhooks → Instagram</strong>: <br>URL: cole acima (ig-url)<br>Verify token: cole acima (ig-vt)<br>Marcar campos: <strong>messages</strong> e <strong>messaging_postbacks</strong></li>'+
+            '<li>Sua conta <strong>Instagram precisa ser Business/Creator</strong> + vinculada a uma Pagina Facebook</li>'+
+            '<li>Volte aqui e clique <strong>Conectar Instagram</strong></li>'+
+          '</ol>'+
+          '<div style="margin-top:10px;padding:10px;background:#3a2e0a;color:#C8A84B;border-radius:6px;font-size:12px">⚠️ App em modo desenvolvimento so funciona com sua propria conta IG. Pra atender clientes, precisa <strong>App Review</strong> da Meta (15-30 dias) — depois do MVP rodando.</div>'+
+        '</div>'+
+      '</div>';
+    } else {
+      header += '<div class="int-events">'+
+        '<h3>DMs recentes ('+igEvents.length+')</h3>';
+      if(igEvents.length===0){
+        header += '<div style="color:var(--text2);text-align:center;padding:24px;font-style:italic">Nenhuma DM ainda. Manda uma msg pra @'+esc(igSt.igUsername)+' pra testar.</div>';
+      } else {
+        igEvents.forEach(function(ev){
+          var when = new Date(ev.receivedAt).toLocaleString('pt-BR');
+          header += '<div class="int-evt">'+
+            '<span class="int-evt-status" style="background:#3a1730;color:#e1306c">📥 IG DM</span>'+
+            '<div class="int-evt-info"><div class="int-evt-name">'+esc(ev.from||'?')+(ev.text?' &middot; '+esc(ev.text.substring(0,80)):'')+'</div>'+
+            '<div class="int-evt-meta">'+when+'</div></div>'+
+          '</div>';
+        });
+      }
+      header += '</div>';
+    }
+    main.style.cssText = ''; main.innerHTML = header;
+    return;
+  }
 
   if(platform === 'wacloud'){
     var waEvents = waCloudSt && waCloudSt.configured ? await fetchWaCloudEvents(20) : [];

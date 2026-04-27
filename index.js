@@ -32,7 +32,7 @@ const BASIC_AUTH_USER = process.env.BASIC_AUTH_USER || '';
 const BASIC_AUTH_PASS = process.env.BASIC_AUTH_PASS || '';
 const SIGNUP_INVITE_CODE = process.env.SIGNUP_INVITE_CODE || ''; // se setado, exige codigo no signup
 const AUTH_SESSION_TTL_DAYS = Number(process.env.AUTH_SESSION_TTL_DAYS || 30);
-const AUTH_BYPASS_PREFIX = ['/health', '/healthz', '/api/webhook/', '/oauth/google/', '/api/push/vapid-public-key', '/auth/', '/login', '/login.html', '/icon-', '/manifest.json', '/sw.js', '/favicon', '/wa-agent', '/wa/qr', '/api/status/'];
+const AUTH_BYPASS_PREFIX = ['/health', '/healthz', '/api/webhook/', '/oauth/google/', '/oauth/instagram/', '/api/push/vapid-public-key', '/auth/', '/login', '/login.html', '/icon-', '/manifest.json', '/sw.js', '/favicon', '/wa-agent', '/wa/qr', '/api/status/'];
 
 const USERS_FILE = process.env.USERS_FILE || path.join(__dirname, "data", "users.json");
 const SESSIONS_FILE = process.env.SESSIONS_FILE || path.join(__dirname, "data", "sessions.json");
@@ -1538,6 +1538,232 @@ app.get("/api/export/all.csv", (req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename="imperador-all-events-${new Date().toISOString().slice(0, 10)}.csv"`);
     res.send(csv);
   } catch (e) { res.status(500).json({ ok: false, error: e?.message }); }
+});
+
+// ============================================================
+// v4.34: INTEGRACAO INSTAGRAM DMs (Meta Graph API)
+// ============================================================
+// Reusa GOOGLE_CLIENT_ID/SECRET da Meta App (Imperador CRM)? NAO - Meta tem seu proprio
+const META_APP_ID = process.env.META_APP_ID || "";
+const META_APP_SECRET = process.env.META_APP_SECRET || "";
+const META_API_VERSION = process.env.META_API_VERSION || "v22.0";
+const IG_VERIFY_TOKEN = process.env.IG_VERIFY_TOKEN || "imperador-ig-verify-2026";
+const IG_TOKENS_FILE = process.env.IG_TOKENS_FILE || path.join(__dirname, "data", "instagram-tokens.json");
+const IG_EVENTS_FILE = process.env.IG_EVENTS_FILE || path.join(__dirname, "data", "instagram-events.json");
+const IG_EVENTS_MAX = 200;
+// AGENT_URL ja declarado em cima (linha 642)
+
+function igTokensLoad() { try { return JSON.parse(require("fs").readFileSync(IG_TOKENS_FILE, "utf8")); } catch { return null; } }
+function igTokensSave(t) { try { require("fs").writeFileSync(IG_TOKENS_FILE, JSON.stringify(t || null, null, 2)); } catch (e) { console.error("[ig tokens]", e?.message); } }
+function igEventsLoad() { try { return JSON.parse(require("fs").readFileSync(IG_EVENTS_FILE, "utf8")); } catch { return []; } }
+function igEventsSave(arr) { try { require("fs").writeFileSync(IG_EVENTS_FILE, JSON.stringify((arr||[]).slice(-IG_EVENTS_MAX), null, 2)); } catch (e) { console.error("[ig events]", e?.message); } }
+function igConfigured() { return !!(META_APP_ID && META_APP_SECRET); }
+function igRedirectUri(req) { return process.env.IG_REDIRECT_URI || `${req.protocol}://${req.get("host")}/oauth/instagram/callback`; }
+
+// Inicia OAuth Facebook Login - precisa Page + IG Business
+app.get("/oauth/instagram/authorize", (req, res) => {
+  if (!igConfigured()) {
+    return res.status(400).send(`<h2>Instagram nao configurado</h2>
+      <p>Setar META_APP_ID e META_APP_SECRET no .env (mesmas credenciais do app Meta Developers).</p>
+      <p>Veja docs em /docs/INSTAGRAM_SETUP.md</p>`);
+  }
+  const state = crypto.randomBytes(16).toString("hex");
+  const params = new URLSearchParams({
+    client_id: META_APP_ID,
+    redirect_uri: igRedirectUri(req),
+    state,
+    response_type: "code",
+    scope: [
+      "instagram_basic",
+      "instagram_manage_messages",
+      "pages_show_list",
+      "pages_messaging",
+      "pages_manage_metadata",
+      "business_management"
+    ].join(",")
+  });
+  res.redirect(`https://www.facebook.com/${META_API_VERSION}/dialog/oauth?${params}`);
+});
+
+app.get("/oauth/instagram/callback", async (req, res) => {
+  try {
+    if (!igConfigured()) return res.status(400).send("Meta App nao configurado");
+    const { code, error } = req.query;
+    if (error) return res.status(400).send(`<h3>Erro OAuth:</h3><pre>${error}</pre><a href="/app">voltar</a>`);
+    if (!code) return res.status(400).send("Sem code");
+    const tokenUrl = `https://graph.facebook.com/${META_API_VERSION}/oauth/access_token?` + new URLSearchParams({
+      client_id: META_APP_ID,
+      client_secret: META_APP_SECRET,
+      redirect_uri: igRedirectUri(req),
+      code: String(code)
+    });
+    const r = await fetch(tokenUrl);
+    const td = await r.json();
+    if (!r.ok || !td.access_token) {
+      return res.status(500).send(`<h3>Falha token:</h3><pre>${JSON.stringify(td, null, 2)}</pre>`);
+    }
+    // Troca por long-lived token (60 dias)
+    const llUrl = `https://graph.facebook.com/${META_API_VERSION}/oauth/access_token?` + new URLSearchParams({
+      grant_type: "fb_exchange_token",
+      client_id: META_APP_ID,
+      client_secret: META_APP_SECRET,
+      fb_exchange_token: td.access_token
+    });
+    const r2 = await fetch(llUrl);
+    const ll = await r2.json();
+    const userToken = ll.access_token || td.access_token;
+    // Lista paginas do user pra achar a IG conectada
+    const pagesR = await fetch(`https://graph.facebook.com/${META_API_VERSION}/me/accounts?` + new URLSearchParams({ access_token: userToken, fields: "id,name,access_token,instagram_business_account{id,username}" }));
+    const pagesD = await pagesR.json();
+    const pageWithIG = (pagesD.data || []).find(p => p.instagram_business_account);
+    if (!pageWithIG) {
+      return res.status(400).send(`<h3>Nenhuma Pagina Facebook com Instagram Business conectado.</h3>
+        <p>Vincula seu Insta Business a uma Pagina Facebook em facebook.com/settings/?tab=linked_profiles e tenta de novo.</p>
+        <pre>${JSON.stringify(pagesD, null, 2)}</pre>`);
+    }
+    const tokens = {
+      userAccessToken: userToken,
+      pageId: pageWithIG.id,
+      pageName: pageWithIG.name,
+      pageAccessToken: pageWithIG.access_token,
+      igUserId: pageWithIG.instagram_business_account.id,
+      igUsername: pageWithIG.instagram_business_account.username,
+      connectedAt: Date.now(),
+      expiresAt: Date.now() + 55 * 24 * 60 * 60 * 1000  // ~55d safe
+    };
+    igTokensSave(tokens);
+    // Subscribe nos eventos da page (necessario pra receber DMs)
+    try {
+      await fetch(`https://graph.facebook.com/${META_API_VERSION}/${pageWithIG.id}/subscribed_apps`, {
+        method: "POST",
+        body: new URLSearchParams({ subscribed_fields: "messages,messaging_postbacks", access_token: pageWithIG.access_token })
+      });
+    } catch (e) { console.error("[ig subscribe]", e?.message); }
+    res.send(`<h2>Instagram conectado!</h2>
+      <p><strong>@${tokens.igUsername}</strong> via Pagina <strong>${tokens.pageName}</strong></p>
+      <p>Token long-lived expira em ~55d (renova auto antes disso).</p>
+      <a href="/app">Voltar pro CRM</a>`);
+  } catch (e) {
+    console.error("[ig callback]", e?.message);
+    res.status(500).send(`<pre>${e?.message}</pre>`);
+  }
+});
+
+// Status conexao
+app.get("/api/integrations/instagram/status", (req, res) => {
+  const t = igTokensLoad();
+  const events = igEventsLoad();
+  res.json({
+    ok: true,
+    configured: igConfigured(),
+    connected: !!(t && t.pageAccessToken),
+    pageName: t?.pageName || null,
+    igUsername: t?.igUsername || null,
+    igUserId: t?.igUserId || null,
+    connectedAt: t?.connectedAt || null,
+    expiresAt: t?.expiresAt || null,
+    expiresInDays: t?.expiresAt ? Math.round((t.expiresAt - Date.now()) / (24*60*60*1000)) : null,
+    eventsCount: events.length,
+    webhookUrl: `${req.protocol}://${req.get("host")}/api/webhook/instagram`,
+    verifyToken: IG_VERIFY_TOKEN,
+    appId: META_APP_ID || null
+  });
+});
+
+app.post("/api/integrations/instagram/disconnect", (_req, res) => {
+  igTokensSave(null);
+  res.json({ ok: true });
+});
+
+app.get("/api/integrations/instagram/events", (req, res) => {
+  const all = igEventsLoad().slice().reverse();
+  const limit = Math.min(Number(req.query.limit) || 30, 200);
+  res.json({ ok: true, total: all.length, items: all.slice(0, limit) });
+});
+
+// Webhook IG: GET pra handshake + POST pra receber events
+app.get("/api/webhook/instagram", (req, res) => {
+  const mode = req.query["hub.mode"];
+  const token = req.query["hub.verify_token"];
+  const challenge = req.query["hub.challenge"];
+  if (mode === "subscribe" && token === IG_VERIFY_TOKEN) {
+    console.log("[ig webhook] verificado");
+    return res.status(200).send(challenge);
+  }
+  return res.status(403).send("Forbidden");
+});
+
+app.post("/api/webhook/instagram", async (req, res) => {
+  try {
+    res.json({ ok: true });  // ack imediato pro Meta
+    const body = req.body || {};
+    if (body.object !== "instagram") return;
+    const arr = igEventsLoad();
+    for (const entry of (body.entry || [])) {
+      for (const msg of (entry.messaging || [])) {
+        // skip echo da pagina
+        if (msg.message?.is_echo) continue;
+        const senderId = msg.sender?.id;
+        const text = msg.message?.text || "[midia/sticker]";
+        const messageId = msg.message?.mid;
+        const evt = {
+          type: "message_in",
+          receivedAt: Date.now(),
+          from: senderId,
+          text,
+          messageId,
+          igUserId: entry.id,
+          raw: msg
+        };
+        arr.push(evt);
+        // Broadcast SSE pro CRM UI
+        broadcastSSE({ type: "instagram_event", data: evt });
+        // Fan-out pro Sofia
+        try {
+          const phoneSurrogate = `ig_${senderId}`;
+          await fetch(`${AGENT_URL}/inbox`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ phone: phoneSurrogate, message: text, name: `IG:${senderId}` })
+          });
+        } catch (e) { console.error("[ig->agent]", e?.message); }
+      }
+    }
+    igEventsSave(arr);
+  } catch (e) {
+    console.error("[ig webhook]", e?.message);
+  }
+});
+
+// Envio de DM via IG Graph API
+async function igSendMessage(recipientIgUserId, text) {
+  const t = igTokensLoad();
+  if (!t || !t.pageAccessToken) throw new Error("Instagram nao conectado");
+  const url = `https://graph.facebook.com/${META_API_VERSION}/${t.igUserId}/messages?access_token=${t.pageAccessToken}`;
+  const body = {
+    recipient: { id: String(recipientIgUserId).replace(/^ig_/, "") },
+    message: { text: String(text) },
+    messaging_type: "RESPONSE"
+  };
+  const r = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  const d = await r.json();
+  if (!r.ok) throw new Error(d.error?.message || `HTTP ${r.status}`);
+  return d;
+}
+
+app.post("/api/integrations/instagram/send", async (req, res) => {
+  try {
+    const { recipient, message } = req.body || {};
+    if (!recipient || !message) return res.status(400).json({ ok: false, error: "recipient e message obrigatorios" });
+    const r = await igSendMessage(recipient, message);
+    res.json({ ok: true, ...r });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e?.message });
+  }
 });
 
 // ============================================================
