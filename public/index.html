@@ -1065,6 +1065,60 @@ async function bulkEnviar(){
 }
 
 // === v4.32: NOTIFICACOES (browser API + service worker push) ===
+// v4.33: detecta navegador pra dar instrucoes especificas quando perm bloqueada
+function detectBrowser(){
+  var ua = navigator.userAgent || '';
+  if(/Edg\//.test(ua)) return 'edge';
+  if(/Chrome\//.test(ua) && !/Edg/.test(ua)) return 'chrome';
+  if(/Firefox\//.test(ua)) return 'firefox';
+  if(/Safari\//.test(ua) && !/Chrome/.test(ua)) return 'safari';
+  return 'other';
+}
+function instrucoesDeniedHTML(){
+  var b = detectBrowser();
+  var origin = location.origin;
+  var ico = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:middle;margin-right:4px"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zM12 17c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/></svg>';
+  var passos = {
+    edge: [
+      'Clica no <strong>cadeado '+ico+'</strong> ao lado da URL (canto superior esquerdo)',
+      'No menu, escolhe <strong>"Configurações de site"</strong> (vai abrir aba nova)',
+      'Procura <strong>"Notificações"</strong> na lista',
+      'Muda de <strong>"Bloquear"</strong> pra <strong>"Permitir"</strong>',
+      'Volta nesta aba e <strong>F5</strong> pra recarregar',
+      '<a href="edge://settings/content/siteDetails?site='+encodeURIComponent(origin)+'" target="_blank" style="color:var(--gold);text-decoration:underline">Atalho direto pra config Edge ↗</a>'
+    ],
+    chrome: [
+      'Clica no <strong>cadeado '+ico+'</strong> ao lado da URL',
+      '<strong>Configurações do site</strong> → procura <strong>Notificações</strong>',
+      'Muda pra <strong>Permitir</strong>',
+      'Volta nesta aba e <strong>F5</strong>',
+      '<a href="chrome://settings/content/siteDetails?site='+encodeURIComponent(origin)+'" target="_blank" style="color:var(--gold);text-decoration:underline">Atalho direto pra config Chrome ↗</a>'
+    ],
+    firefox: [
+      'Clica no <strong>cadeado '+ico+'</strong> ao lado da URL',
+      'Clica no <strong>"X"</strong> vermelho ao lado de "Receber notificações" pra remover bloqueio',
+      'F5 pra recarregar e tentar de novo'
+    ],
+    safari: [
+      'Safari → Preferências (Cmd+,) → <strong>Sites</strong> → <strong>Notificações</strong>',
+      'Acha <strong>crm.institutoideoficial.com.br</strong> na lista',
+      'Muda pra <strong>Permitir</strong>',
+      'Volta nesta aba e <strong>Cmd+R</strong>'
+    ],
+    other: [
+      'Clica no <strong>cadeado '+ico+'</strong> ao lado da URL',
+      'Procura <strong>Notificações / Notifications</strong>',
+      'Muda pra <strong>Permitir / Allow</strong>',
+      'Recarrega a pagina (F5)'
+    ]
+  };
+  var nav = { edge:'Edge', chrome:'Chrome', firefox:'Firefox', safari:'Safari', other:'seu navegador' }[b];
+  return '<div style="margin-top:12px;background:#3a1a1a;border-left:3px solid #ef4444;padding:14px;border-radius:8px">'+
+    '<div style="font-weight:700;color:#fca5a5;margin-bottom:10px">📋 Como liberar no '+nav+':</div>'+
+    '<ol style="margin:0;padding-left:22px;font-size:13px;color:#fca5a5;line-height:1.8">'+
+      passos[b].map(function(p){ return '<li>'+p+'</li>'; }).join('')+
+    '</ol></div>';
+}
 function renderNotifPage(main){
   main.style.cssText='padding:16px;overflow-y:auto;flex:1;display:block';
   var perm = (typeof Notification!=='undefined') ? Notification.permission : 'unsupported';
@@ -1078,7 +1132,7 @@ function renderNotifPage(main){
       '<div style="font-size:13px;color:var(--text2);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Permissao do navegador</div>'+
       '<div style="font-size:18px;font-weight:700;color:'+permClr+'">'+permLbl+'</div>'+
       (perm==='default'?'<button class="bok" style="margin-top:10px;background:var(--gold);color:#111" onclick="notifAtivar()">🔓 Pedir permissao</button>':'')+
-      (perm==='denied'?'<div style="margin-top:8px;font-size:11px;color:var(--text2)">Pra liberar: clique no cadeado da URL → Site settings → Notifications → Allow</div>':'')+
+      (perm==='denied'?instrucoesDeniedHTML():'')+
       (perm==='granted'?'<button class="bok" style="margin-top:10px" onclick="notifTeste()">🧪 Testar agora</button>':'')+
     '</div>'+
     '<div style="background:var(--panel);border-radius:10px;padding:18px;margin-bottom:14px;border-left:3px solid '+(window._pushReal?'#10b981':'#f59e0b')+'">'+
