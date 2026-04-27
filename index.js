@@ -7,7 +7,7 @@ const webPush = require("web-push");
 const bcrypt = require("bcryptjs");
 const cookieParser = require("cookie-parser");
 const rateLimit = require("express-rate-limit");
-const { authenticator } = require("otplib");
+const otplib = require("otplib");
 
 const app = express();
 app.use(cookieParser());
@@ -200,8 +200,8 @@ app.post('/auth/login', async (req, res) => {
     // v4.34: 2FA TOTP - se ativo, exige token
     if (user.totpEnabled && user.totpSecret) {
       if (!totp) return res.status(401).json({ ok: false, requires2FA: true, error: 'codigo 2FA obrigatorio' });
-      const valid = authenticator.verify({ token: String(totp).replace(/\D/g, ''), secret: user.totpSecret });
-      if (!valid) return res.status(401).json({ ok: false, requires2FA: true, error: 'codigo 2FA invalido ou expirado' });
+      const v = otplib.verifySync({ token: String(totp).replace(/\D/g, ''), secret: user.totpSecret });
+      if (!v || !v.valid) return res.status(401).json({ ok: false, requires2FA: true, error: 'codigo 2FA invalido ou expirado' });
     }
     user.lastLoginAt = Date.now();
     usersSave(users);
@@ -221,15 +221,15 @@ app.post('/auth/2fa/setup', (req, res) => {
     if (!auth) return res.status(401).json({ ok: false, error: 'auth required' });
     const users = usersLoad();
     const user = users.find(u => u.id === auth.user.id);
-    if (!user) return res.status(404).json({ ok: false, error: 'user nao encontrado' });
+    if (!user) return res.status(404).json({ ok: false, error: 'user nao encontrado (2FA precisa login real, nao Basic Auth)' });
     if (user.totpEnabled) return res.status(400).json({ ok: false, error: '2FA ja ativo. Desative primeiro.' });
     // Gera secret novo (mas NAO salva ainda - so depois do enable)
-    const secret = authenticator.generateSecret();
+    const secret = otplib.generateSecret();
     user._pendingTotpSecret = secret;
     usersSave(users);
     const issuer = 'Imperador CRM';
     const accountName = user.email;
-    const otpauthUrl = authenticator.keyuri(accountName, issuer, secret);
+    const otpauthUrl = otplib.generateURI({ secret, label: accountName, issuer });
     const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(otpauthUrl)}`;
     res.json({ ok: true, secret, otpauthUrl, qrUrl, instructions: 'Escaneia o QR no Google Authenticator/Authy/1Password. Depois manda o codigo de 6 digitos pra /auth/2fa/enable.' });
   } catch (e) { res.status(500).json({ ok: false, error: e?.message }); }
@@ -243,11 +243,11 @@ app.post('/auth/2fa/enable', (req, res) => {
     if (!token) return res.status(400).json({ ok: false, error: 'token obrigatorio' });
     const users = usersLoad();
     const user = users.find(u => u.id === auth.user.id);
-    if (!user) return res.status(404).json({ ok: false, error: 'user nao encontrado' });
+    if (!user) return res.status(404).json({ ok: false, error: 'user nao encontrado (2FA precisa login real, nao Basic Auth)' });
     if (user.totpEnabled) return res.status(400).json({ ok: false, error: '2FA ja ativo' });
     if (!user._pendingTotpSecret) return res.status(400).json({ ok: false, error: 'rode /auth/2fa/setup primeiro' });
-    const valid = authenticator.verify({ token: String(token).replace(/\D/g, ''), secret: user._pendingTotpSecret });
-    if (!valid) return res.status(400).json({ ok: false, error: 'codigo invalido ou expirado' });
+    const v = otplib.verifySync({ token: String(token).replace(/\D/g, ''), secret: user._pendingTotpSecret });
+    if (!v || !v.valid) return res.status(400).json({ ok: false, error: 'codigo invalido ou expirado' });
     user.totpSecret = user._pendingTotpSecret;
     user.totpEnabled = true;
     user.totpEnabledAt = Date.now();
@@ -265,7 +265,7 @@ app.post('/auth/2fa/disable', async (req, res) => {
     if (!password) return res.status(400).json({ ok: false, error: 'senha obrigatoria pra desativar 2FA' });
     const users = usersLoad();
     const user = users.find(u => u.id === auth.user.id);
-    if (!user) return res.status(404).json({ ok: false, error: 'user nao encontrado' });
+    if (!user) return res.status(404).json({ ok: false, error: 'user nao encontrado (2FA precisa login real, nao Basic Auth)' });
     const ok = await bcrypt.compare(password, user.passwordHash);
     if (!ok) return res.status(401).json({ ok: false, error: 'senha invalida' });
     delete user.totpSecret;
