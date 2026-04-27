@@ -658,6 +658,57 @@ async function forwardToAgent(inner) {
   }
 }
 
+// v4.34: Proxy endpoints pra UI acessar o agent (autenticado pelo CRM)
+app.get("/api/agent/healthz", async (_req, res) => {
+  if (!AGENT_URL) return res.status(503).json({ ok: false, error: "AGENT_URL nao configurado" });
+  try {
+    const r = await fetch(`${AGENT_URL}/healthz`);
+    const d = await r.json();
+    res.json(d);
+  } catch (e) { res.status(502).json({ ok: false, error: e?.message }); }
+});
+
+app.get("/api/agent/outbox", async (req, res) => {
+  if (!AGENT_URL) return res.status(503).json({ ok: false, error: "AGENT_URL nao configurado" });
+  try {
+    const status = req.query.status || "pending";
+    const limit = req.query.limit || 100;
+    const r = await fetch(`${AGENT_URL}/outbox?status=${encodeURIComponent(status)}&limit=${limit}`);
+    const d = await r.json();
+    res.json(d);
+  } catch (e) { res.status(502).json({ ok: false, error: e?.message }); }
+});
+
+app.post("/api/agent/outbox/:id/decide", async (req, res) => {
+  if (!AGENT_URL) return res.status(503).json({ ok: false, error: "AGENT_URL nao configurado" });
+  try {
+    const r = await fetch(`${AGENT_URL}/outbox/${encodeURIComponent(req.params.id)}/decide`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(req.body || {})
+    });
+    const d = await r.json();
+    res.status(r.status).json(d);
+  } catch (e) { res.status(502).json({ ok: false, error: e?.message }); }
+});
+
+app.post("/api/agent/mode", async (req, res) => {
+  // helper: muda mode via tool set_mode chamando /inbox? nao, melhor expor /mode
+  // mas agent atual /mode eh GET. Vou usar /inbox com msg auto-enviada da Vanessa
+  if (!AGENT_URL) return res.status(503).json({ ok: false, error: "AGENT_URL nao configurado" });
+  const mode = req.body && req.body.mode;
+  if (!["treino", "review", "producao"].includes(mode)) return res.status(400).json({ ok: false, error: "mode invalido" });
+  try {
+    const r = await fetch(`${AGENT_URL}/mode`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode })
+    });
+    const d = await r.json();
+    res.status(r.status).json(d);
+  } catch (e) { res.status(502).json({ ok: false, error: e?.message }); }
+});
+
 app.post("/api/webhook/bravos", async (req, res) => {
   try {
     const msg = req.body || {};
