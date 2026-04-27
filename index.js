@@ -4,8 +4,11 @@ const path = require("path");
 const Anthropic = require("@anthropic-ai/sdk");
 const platformUtils = require('./lib/platform-utils');
 const webPush = require("web-push");
+const bcrypt = require("bcryptjs");
+const cookieParser = require("cookie-parser");
 
 const app = express();
+app.use(cookieParser());
 const PORT = process.env.PORT || 3000;
 
 // Config Bravos WhatsApp API
@@ -23,32 +26,175 @@ app.use(express.json({
   limit: '2mb'
 }));
 
-// v4.32: Basic Auth opt-in pra UI/API (proteje quando expor publicamente)
-// Setar BASIC_AUTH_USER + BASIC_AUTH_PASS no .env. Excecoes: webhooks externos, healthcheck, SSE.
+// v4.33: AUTH SYSTEM (cookie-based session + signup/login UI)
+// Mantem fallback Basic Auth opt-in pra cron interno, mas UI usa cookie.
 const BASIC_AUTH_USER = process.env.BASIC_AUTH_USER || '';
 const BASIC_AUTH_PASS = process.env.BASIC_AUTH_PASS || '';
-const BASIC_AUTH_BYPASS = ['/health', '/healthz', '/api/webhook/', '/oauth/google/', '/api/push/vapid-public-key'];
-if (BASIC_AUTH_USER && BASIC_AUTH_PASS) {
-  app.use((req, res, next) => {
-    if (BASIC_AUTH_BYPASS.some(p => req.url.startsWith(p))) return next();
-    const h = req.headers.authorization || '';
-    if (h.startsWith('Basic ')) {
-      try {
-        const dec = Buffer.from(h.slice(6), 'base64').toString('utf8');
-        const i = dec.indexOf(':');
-        if (i > 0) {
-          const u = dec.slice(0, i), p = dec.slice(i + 1);
-          if (u === BASIC_AUTH_USER && p === BASIC_AUTH_PASS) return next();
-        }
-      } catch {}
-    }
-    res.setHeader('WWW-Authenticate', 'Basic realm="Imperador CRM", charset="UTF-8"');
-    res.status(401).send('Auth required');
-  });
-  console.log('[basic-auth] ativo pra usuario "' + BASIC_AUTH_USER + '"');
+const SIGNUP_INVITE_CODE = process.env.SIGNUP_INVITE_CODE || ''; // se setado, exige codigo no signup
+const AUTH_SESSION_TTL_DAYS = Number(process.env.AUTH_SESSION_TTL_DAYS || 30);
+const AUTH_BYPASS_PREFIX = ['/health', '/healthz', '/api/webhook/', '/oauth/google/', '/api/push/vapid-public-key', '/auth/', '/login', '/login.html', '/icon-', '/manifest.json', '/sw.js', '/favicon'];
+
+const USERS_FILE = process.env.USERS_FILE || path.join(__dirname, "data", "users.json");
+const SESSIONS_FILE = process.env.SESSIONS_FILE || path.join(__dirname, "data", "sessions.json");
+
+function _loadJsonFile(p, def) { try { return JSON.parse(require('fs').readFileSync(p, 'utf8')); } catch { return def; } }
+function _saveJsonFile(p, data) { try { require('fs').writeFileSync(p, JSON.stringify(data, null, 2)); } catch (e) { console.error('[auth] save', p, e?.message); } }
+
+function usersLoad() { return _loadJsonFile(USERS_FILE, []); }
+function usersSave(arr) { _saveJsonFile(USERS_FILE, arr); }
+function sessionsLoad() { return _loadJsonFile(SESSIONS_FILE, []); }
+function sessionsSave(arr) { _saveJsonFile(SESSIONS_FILE, arr); }
+
+function sessionsClean() {
+  const now = Date.now();
+  const arr = sessionsLoad().filter(s => s.expiresAt > now);
+  sessionsSave(arr);
+  return arr;
 }
 
-app.get("/", (req, res) => res.sendFile(path.join(__dirname, "public", "welcome.html")));
+function sessionFindByToken(token) {
+  if (!token) return null;
+  const arr = sessionsClean();
+  return arr.find(s => s.token === token) || null;
+}
+
+function sessionCreate(userId) {
+  const crypto = require('crypto');
+  const token = crypto.randomBytes(32).toString('hex');
+  const arr = sessionsClean();
+  const item = { token, userId, createdAt: Date.now(), expiresAt: Date.now() + AUTH_SESSION_TTL_DAYS * 24 * 60 * 60 * 1000 };
+  arr.push(item);
+  sessionsSave(arr);
+  return item;
+}
+
+function sessionDelete(token) {
+  if (!token) return;
+  const arr = sessionsLoad().filter(s => s.token !== token);
+  sessionsSave(arr);
+}
+
+function authBypass(reqUrl) {
+  return AUTH_BYPASS_PREFIX.some(p => reqUrl === p || reqUrl.startsWith(p));
+}
+
+function authResolveUser(req) {
+  // 1. Cookie de sessao
+  const token = req.cookies?.imp_session;
+  if (token) {
+    const sess = sessionFindByToken(token);
+    if (sess) {
+      const user = usersLoad().find(u => u.id === sess.userId);
+      if (user) return { user, via: 'cookie' };
+    }
+  }
+  // 2. Fallback: Basic Auth (uso interno cron)
+  const h = req.headers.authorization || '';
+  if (h.startsWith('Basic ') && BASIC_AUTH_USER && BASIC_AUTH_PASS) {
+    try {
+      const dec = Buffer.from(h.slice(6), 'base64').toString('utf8');
+      const i = dec.indexOf(':');
+      if (i > 0) {
+        const u = dec.slice(0, i), p = dec.slice(i + 1);
+        if (u === BASIC_AUTH_USER && p === BASIC_AUTH_PASS) {
+          return { user: { id: 'basic-' + u, email: u + '@local', name: u, role: 'admin', createdAt: 0 }, via: 'basic' };
+        }
+      }
+    } catch {}
+  }
+  return null;
+}
+
+// Middleware principal - protege tudo exceto bypass
+app.use((req, res, next) => {
+  if (authBypass(req.url)) return next();
+  const auth = authResolveUser(req);
+  if (auth) { req.user = auth.user; return next(); }
+  // Pra HTML/UI, redireciona pra login. Pra API, retorna 401 JSON.
+  if (req.headers.accept && req.headers.accept.includes('text/html')) {
+    return res.redirect('/login?next=' + encodeURIComponent(req.url));
+  }
+  res.status(401).json({ ok: false, error: 'auth required' });
+});
+console.log('[auth] sistema cookie+signup ativo (TTL ' + AUTH_SESSION_TTL_DAYS + 'd)' + (BASIC_AUTH_USER ? ', fallback Basic ativo' : ''));
+
+// === Endpoints de auth ===
+app.post('/auth/signup', async (req, res) => {
+  try {
+    const { email, password, name, inviteCode } = req.body || {};
+    if (!email || !password) return res.status(400).json({ ok: false, error: 'email e senha obrigatorios' });
+    if (password.length < 6) return res.status(400).json({ ok: false, error: 'senha minima 6 caracteres' });
+    if (SIGNUP_INVITE_CODE && inviteCode !== SIGNUP_INVITE_CODE) {
+      return res.status(403).json({ ok: false, error: 'codigo de convite invalido' });
+    }
+    const users = usersLoad();
+    const emailLow = String(email).toLowerCase().trim();
+    if (users.find(u => u.email === emailLow)) return res.status(409).json({ ok: false, error: 'email ja cadastrado' });
+    const passwordHash = await bcrypt.hash(password, 10);
+    const user = {
+      id: 'usr_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+      email: emailLow,
+      name: String(name || emailLow.split('@')[0]).trim(),
+      passwordHash,
+      role: users.length === 0 ? 'admin' : 'user', // 1o usuario = admin
+      createdAt: Date.now(),
+      lastLoginAt: Date.now()
+    };
+    users.push(user);
+    usersSave(users);
+    const sess = sessionCreate(user.id);
+    res.cookie('imp_session', sess.token, {
+      httpOnly: true, secure: req.secure || req.headers['x-forwarded-proto'] === 'https',
+      sameSite: 'lax', maxAge: AUTH_SESSION_TTL_DAYS * 24 * 60 * 60 * 1000
+    });
+    res.json({ ok: true, user: { id: user.id, email: user.email, name: user.name, role: user.role } });
+  } catch (e) { res.status(500).json({ ok: false, error: e?.message }); }
+});
+
+app.post('/auth/login', async (req, res) => {
+  try {
+    const { email, password } = req.body || {};
+    if (!email || !password) return res.status(400).json({ ok: false, error: 'email e senha obrigatorios' });
+    const emailLow = String(email).toLowerCase().trim();
+    const users = usersLoad();
+    const user = users.find(u => u.email === emailLow);
+    if (!user) return res.status(401).json({ ok: false, error: 'email ou senha invalidos' });
+    const ok = await bcrypt.compare(password, user.passwordHash);
+    if (!ok) return res.status(401).json({ ok: false, error: 'email ou senha invalidos' });
+    user.lastLoginAt = Date.now();
+    usersSave(users);
+    const sess = sessionCreate(user.id);
+    res.cookie('imp_session', sess.token, {
+      httpOnly: true, secure: req.secure || req.headers['x-forwarded-proto'] === 'https',
+      sameSite: 'lax', maxAge: AUTH_SESSION_TTL_DAYS * 24 * 60 * 60 * 1000
+    });
+    res.json({ ok: true, user: { id: user.id, email: user.email, name: user.name, role: user.role } });
+  } catch (e) { res.status(500).json({ ok: false, error: e?.message }); }
+});
+
+app.post('/auth/logout', (req, res) => {
+  const token = req.cookies?.imp_session;
+  if (token) sessionDelete(token);
+  res.clearCookie('imp_session');
+  res.json({ ok: true });
+});
+
+app.get('/auth/me', (req, res) => {
+  const auth = authResolveUser(req);
+  if (!auth) return res.status(401).json({ ok: false });
+  res.json({ ok: true, user: { id: auth.user.id, email: auth.user.email, name: auth.user.name, role: auth.user.role }, via: auth.via });
+});
+
+app.get('/auth/users-count', (_req, res) => {
+  // publico: usado pelo signup pra mostrar "Voce sera o admin" ou nao
+  res.json({ ok: true, count: usersLoad().length, requiresInvite: !!SIGNUP_INVITE_CODE });
+});
+
+// Rota /login serve a pagina HTML
+app.get('/login', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'login.html')));
+
+// v4.33: rota raiz redireciona pra /app (que vai pedir login se nao autenticado)
+app.get("/", (req, res) => res.redirect('/app'));
 app.get("/app", (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
 app.use(express.static(path.join(__dirname, "public")));
 
