@@ -32,7 +32,7 @@ const BASIC_AUTH_USER = process.env.BASIC_AUTH_USER || '';
 const BASIC_AUTH_PASS = process.env.BASIC_AUTH_PASS || '';
 const SIGNUP_INVITE_CODE = process.env.SIGNUP_INVITE_CODE || ''; // se setado, exige codigo no signup
 const AUTH_SESSION_TTL_DAYS = Number(process.env.AUTH_SESSION_TTL_DAYS || 30);
-const AUTH_BYPASS_PREFIX = ['/health', '/healthz', '/api/webhook/', '/oauth/google/', '/oauth/instagram/', '/api/push/vapid-public-key', '/auth/', '/login', '/login.html', '/icon-', '/manifest.json', '/sw.js', '/favicon', '/wa-agent', '/wa/qr', '/api/status/'];
+const AUTH_BYPASS_PREFIX = ['/health', '/healthz', '/api/webhook/', '/oauth/google/', '/oauth/instagram/', '/api/push/vapid-public-key', '/auth/', '/login', '/login.html', '/icon-', '/manifest.json', '/sw.js', '/favicon', '/wa-agent', '/wa/qr', '/api/status/', '/e/', '/t/', '/api/public/'];
 
 const USERS_FILE = process.env.USERS_FILE || path.join(__dirname, "data", "users.json");
 const SESSIONS_FILE = process.env.SESSIONS_FILE || path.join(__dirname, "data", "sessions.json");
@@ -3110,6 +3110,312 @@ async function schedTick() {
 setInterval(schedTick, 30 * 1000); // 30s
 // Roda 1 vez ao subir (catch-up)
 setTimeout(schedTick, 5 * 1000);
+
+// ============================================================
+// v4.34: GERENCIADOR DE EVENTOS (Sympla-like MVP)
+// ============================================================
+// Helper local pra escapar HTML nos templates publicos
+function esc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;"); }
+
+const EVENTS_FILE = process.env.EVENTS_FILE || path.join(__dirname, "data", "events.json");
+const TICKETS_FILE = process.env.TICKETS_FILE || path.join(__dirname, "data", "tickets.json");
+
+function eventsLoad() { try { return JSON.parse(fs.readFileSync(EVENTS_FILE, "utf8")); } catch { return []; } }
+function eventsSave(arr) { try { fs.writeFileSync(EVENTS_FILE, JSON.stringify(arr || [], null, 2)); } catch (e) { console.error("[events]", e?.message); } }
+function ticketsLoad() { try { return JSON.parse(fs.readFileSync(TICKETS_FILE, "utf8")); } catch { return []; } }
+function ticketsSave(arr) { try { fs.writeFileSync(TICKETS_FILE, JSON.stringify(arr || [], null, 2)); } catch (e) { console.error("[tickets]", e?.message); } }
+
+function eventNewId() { return "ev_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+function ticketNewId() { return "tk_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 10); }
+function slugify(s) {
+  return String(s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80) || "evento";
+}
+
+// === Endpoints publicos (landing + ingresso + check-in publico) ===
+app.get("/e/:slug", (req, res) => {
+  const ev = eventsLoad().find(e => e.slug === req.params.slug);
+  if (!ev) return res.status(404).send("<h1>Evento nao encontrado</h1>");
+  if (ev.status === "draft") return res.status(404).send("<h1>Evento nao publicado</h1>");
+  // Render landing simples
+  const dateStr = ev.startAt ? new Date(ev.startAt).toLocaleString("pt-BR", { dateStyle: "long", timeStyle: "short" }) : "";
+  const locationStr = ev.type === "online" ? "🌐 Online" : `📍 ${ev.location?.venue || "Local a definir"}, ${ev.location?.city || ""}`;
+  const ticketTypes = (ev.ticketTypes || []).filter(t => t.quantity == null || (t.sold || 0) < t.quantity);
+  res.send(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(ev.title)} — ${esc(ev.organizer?.name || "Speakers Play")}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;background:#fafaf8;color:#1a1a1a;line-height:1.6}
+.hero{background:linear-gradient(135deg,#C8A84B 0%,#a08538 100%);color:#111;padding:60px 20px;text-align:center}
+.hero h1{font-size:36px;font-weight:800;margin-bottom:8px}
+.hero .meta{font-size:15px;font-weight:600;opacity:.9}
+.box{max-width:720px;margin:-30px auto 40px;background:#fff;padding:30px;border-radius:14px;box-shadow:0 10px 40px rgba(0,0,0,.08)}
+.box h2{font-size:18px;color:#C8A84B;margin-bottom:10px;text-transform:uppercase;letter-spacing:1px}
+.desc{margin:14px 0 24px;color:#444;white-space:pre-wrap}
+.tt{border:2px solid #ececec;padding:18px;border-radius:10px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px}
+.tt .name{font-weight:700;font-size:16px}
+.tt .price{font-size:20px;font-weight:800;color:#C8A84B}
+.tt .free{color:#10b981}
+.cta{display:block;width:100%;background:#C8A84B;color:#111;padding:14px;border:none;border-radius:10px;font-size:16px;font-weight:700;cursor:pointer;margin-top:8px;text-decoration:none;text-align:center}
+.cta:hover{background:#a08538}
+form{margin-top:24px;display:none}
+form.open{display:block}
+form input{width:100%;padding:12px;border:2px solid #ddd;border-radius:8px;margin-bottom:10px;font-size:14px;font-family:inherit}
+form input:focus{outline:none;border-color:#C8A84B}
+.footer{text-align:center;padding:20px;color:#999;font-size:12px}
+.success{background:#d1fae5;color:#065f46;padding:18px;border-radius:10px;margin-top:14px;text-align:center}
+</style></head><body>
+<div class="hero">
+  <h1>${esc(ev.title)}</h1>
+  <div class="meta">${esc(dateStr)} &middot; ${esc(locationStr)}</div>
+</div>
+<div class="box">
+  <h2>Sobre</h2>
+  <div class="desc">${esc(ev.description || "")}</div>
+  <h2>Ingressos</h2>
+  ${ticketTypes.length === 0 ? '<div style="color:#999;text-align:center;padding:20px">Nenhum ingresso disponível.</div>' : ticketTypes.map(t => `
+  <div class="tt">
+    <div>
+      <div class="name">${esc(t.name)}</div>
+      <div style="font-size:12px;color:#666">${esc(t.description || "")}</div>
+    </div>
+    <div class="price ${t.price === 0 ? 'free' : ''}">${t.price === 0 ? 'GRÁTIS' : 'R$ ' + Number(t.price).toFixed(2).replace('.', ',')}</div>
+  </div>`).join("")}
+  ${ticketTypes.length > 0 ? `<button class="cta" onclick="document.getElementById('f').classList.add('open');this.style.display='none'">Quero participar</button>
+  <form id="f" onsubmit="return inscrever(event)">
+    <input id="nm" placeholder="Seu nome completo" required>
+    <input id="em" type="email" placeholder="Email" required>
+    <input id="ph" type="tel" placeholder="WhatsApp (com DDD)" required>
+    <button class="cta" type="submit">Confirmar inscrição</button>
+    <div id="msg"></div>
+  </form>` : ''}
+</div>
+<div class="footer">${esc(ev.organizer?.name || "Speakers Play")} &middot; <a href="/" style="color:#999">CRM Imperador</a></div>
+<script>
+async function inscrever(e){
+  e.preventDefault();
+  var btn = e.target.querySelector('button[type=submit]');
+  btn.disabled = true; btn.textContent = 'Processando...';
+  try {
+    var r = await fetch('/api/public/events/${esc(ev.slug)}/order', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        name: document.getElementById('nm').value,
+        email: document.getElementById('em').value,
+        phone: document.getElementById('ph').value,
+        ticketTypeId: '${ticketTypes[0]?.id || ""}'
+      })
+    });
+    var d = await r.json();
+    if (d.ok) {
+      document.getElementById('msg').innerHTML = '<div class="success">✅ Inscrição confirmada!<br><a href="/t/'+d.ticket.id+'" style="color:#065f46;font-weight:700">Ver ingresso (QR Code)</a></div>';
+      e.target.querySelectorAll('input').forEach(i=>i.disabled=true);
+      btn.style.display='none';
+    } else {
+      document.getElementById('msg').innerHTML = '<div style="color:#ef4444;padding:10px;text-align:center">'+ (d.error || 'Erro') +'</div>';
+      btn.disabled = false; btn.textContent = 'Confirmar inscrição';
+    }
+  } catch(e){
+    document.getElementById('msg').innerHTML = '<div style="color:#ef4444">Erro: '+e.message+'</div>';
+    btn.disabled = false; btn.textContent = 'Confirmar inscrição';
+  }
+  return false;
+}
+</script>
+</body></html>`);
+});
+
+app.get("/t/:id", (req, res) => {
+  const tk = ticketsLoad().find(t => t.id === req.params.id);
+  if (!tk) return res.status(404).send("<h1>Ingresso nao encontrado</h1>");
+  const ev = eventsLoad().find(e => e.id === tk.eventId);
+  if (!ev) return res.status(404).send("<h1>Evento nao encontrado</h1>");
+  const dateStr = ev.startAt ? new Date(ev.startAt).toLocaleString("pt-BR", { dateStyle: "long", timeStyle: "short" }) : "";
+  const ticketType = (ev.ticketTypes || []).find(t => t.id === tk.ticketTypeId);
+  // QR code via API publica do qrserver (sem dep externa)
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(tk.id)}`;
+  const statusBadge = tk.status === "used" ? '<span style="background:#fee2e2;color:#991b1b;padding:4px 12px;border-radius:8px;font-size:12px;font-weight:700">JÁ USADO</span>' : '<span style="background:#d1fae5;color:#065f46;padding:4px 12px;border-radius:8px;font-size:12px;font-weight:700">VÁLIDO</span>';
+  res.send(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Ingresso — ${esc(ev.title)}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,sans-serif;background:#1a1612;color:#e8e6e1;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}
+.ticket{background:#fff;color:#1a1a1a;border-radius:14px;max-width:420px;width:100%;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.4)}
+.head{background:linear-gradient(135deg,#C8A84B 0%,#a08538 100%);color:#111;padding:24px;text-align:center}
+.head h1{font-size:20px;margin-bottom:6px}
+.head .meta{font-size:13px;opacity:.85}
+.body{padding:24px}
+.qr{text-align:center;padding:20px;background:#fafaf8;border-radius:10px;margin:14px 0}
+.qr img{display:block;margin:0 auto;border-radius:8px}
+.attendee{margin-top:16px;padding:14px;background:#fafaf8;border-radius:10px}
+.attendee .label{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#999;margin-bottom:4px}
+.attendee .val{font-size:14px;font-weight:600}
+.footer{padding:14px;text-align:center;font-size:11px;color:#999;background:#fafaf8;border-top:2px dashed #e5e5e5}
+</style></head><body>
+<div class="ticket">
+  <div class="head">
+    <h1>${esc(ev.title)}</h1>
+    <div class="meta">${esc(dateStr)}</div>
+    <div style="margin-top:10px">${statusBadge}</div>
+  </div>
+  <div class="body">
+    <div class="qr"><img src="${qrUrl}" alt="QR Code"></div>
+    <div style="text-align:center;font-family:monospace;font-size:11px;color:#999;letter-spacing:1px">${esc(tk.id)}</div>
+    <div class="attendee">
+      <div class="label">Participante</div>
+      <div class="val">${esc(tk.attendeeName)}</div>
+      <div class="label" style="margin-top:8px">Tipo de ingresso</div>
+      <div class="val">${esc(ticketType?.name || "?")}</div>
+    </div>
+  </div>
+  <div class="footer">${esc(ev.organizer?.name || "Speakers Play")} &middot; Apresente esse QR no check-in</div>
+</div>
+</body></html>`);
+});
+
+// Cria pedido + emite ticket (publico)
+app.post("/api/public/events/:slug/order", async (req, res) => {
+  try {
+    const events = eventsLoad();
+    const ev = events.find(e => e.slug === req.params.slug);
+    if (!ev) return res.status(404).json({ ok: false, error: "Evento nao encontrado" });
+    if (ev.status === "draft") return res.status(403).json({ ok: false, error: "Evento nao publicado" });
+    const { name, email, phone, ticketTypeId } = req.body || {};
+    if (!name || !email || !phone) return res.status(400).json({ ok: false, error: "name, email e phone obrigatorios" });
+    const tt = (ev.ticketTypes || []).find(t => t.id === ticketTypeId) || ev.ticketTypes?.[0];
+    if (!tt) return res.status(400).json({ ok: false, error: "Sem tipos de ingresso" });
+    if (tt.quantity != null && (tt.sold || 0) >= tt.quantity) return res.status(400).json({ ok: false, error: "Lote esgotado" });
+    const tickets = ticketsLoad();
+    const cleanPhone = String(phone).replace(/\D/g, "");
+    const tk = {
+      id: ticketNewId(),
+      eventId: ev.id,
+      ticketTypeId: tt.id,
+      attendeeName: String(name).trim(),
+      attendeeEmail: String(email).trim().toLowerCase(),
+      attendeePhone: cleanPhone,
+      price: tt.price,
+      status: "valid",
+      createdAt: Date.now(),
+      checkedInAt: null
+    };
+    tickets.push(tk);
+    ticketsSave(tickets);
+    // Incrementa sold
+    tt.sold = (tt.sold || 0) + 1;
+    eventsSave(events);
+    // Auto-create contact tag e dispara WhatsApp confirma se Bravos online
+    try {
+      const tagsMap = contactTagsLoad();
+      if (!tagsMap[cleanPhone]) tagsMap[cleanPhone] = [];
+      const tag = "evento:" + ev.slug;
+      if (!tagsMap[cleanPhone].includes(tag)) tagsMap[cleanPhone].push(tag);
+      contactTagsSave(tagsMap);
+    } catch (e) {}
+    // Manda confirmacao via WhatsApp se possivel
+    try {
+      const msg = `🎟️ Inscricao confirmada!\n\n*${ev.title}*\n📅 ${new Date(ev.startAt).toLocaleString("pt-BR", { dateStyle: "long", timeStyle: "short" })}\n${ev.type === "online" ? "🌐 Online" : "📍 " + (ev.location?.venue || "Local a definir")}\n\nSeu ingresso (com QR pra check-in):\nhttps://crm.institutoideoficial.com.br/t/${tk.id}`;
+      fetch(`http://127.0.0.1:${PORT}/api/send-message`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: cleanPhone, message: msg })
+      }).catch(() => {});
+    } catch (e) {}
+    broadcastSSE({ type: "event_order_created", data: { eventId: ev.id, eventSlug: ev.slug, ticketId: tk.id, attendee: tk.attendeeName } });
+    res.json({ ok: true, ticket: { id: tk.id, attendeeName: tk.attendeeName }, ticketUrl: `/t/${tk.id}` });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e?.message });
+  }
+});
+
+// === Endpoints painel organizador (auth required) ===
+app.get("/api/events", (_req, res) => {
+  res.json({ ok: true, items: eventsLoad() });
+});
+app.get("/api/events/:id", (req, res) => {
+  const ev = eventsLoad().find(e => e.id === req.params.id || e.slug === req.params.id);
+  if (!ev) return res.status(404).json({ ok: false, error: "evento nao encontrado" });
+  const tickets = ticketsLoad().filter(t => t.eventId === ev.id);
+  res.json({ ok: true, event: ev, ticketsCount: tickets.length, ticketsCheckedIn: tickets.filter(t => t.status === "used").length });
+});
+app.post("/api/events", (req, res) => {
+  try {
+    const b = req.body || {};
+    if (!b.title) return res.status(400).json({ ok: false, error: "title obrigatorio" });
+    const events = eventsLoad();
+    const ev = {
+      id: eventNewId(),
+      slug: b.slug || slugify(b.title) + "-" + Date.now().toString(36).slice(-4),
+      title: String(b.title),
+      description: String(b.description || ""),
+      type: b.type || "online",
+      startAt: b.startAt || null,
+      endAt: b.endAt || null,
+      location: b.location || {},
+      organizer: b.organizer || { name: "Speakers Play Academy" },
+      status: b.status || "draft",
+      capacity: b.capacity || null,
+      ticketTypes: (b.ticketTypes || [{ id: "tt_default_" + Date.now().toString(36).slice(-4), name: "Inscrição grátis", price: 0, quantity: null, sold: 0 }]).map(t => ({
+        id: t.id || "tt_" + Math.random().toString(36).slice(2, 10),
+        name: t.name || "Ingresso",
+        price: Number(t.price) || 0,
+        quantity: t.quantity || null,
+        sold: 0,
+        description: t.description || ""
+      })),
+      createdAt: Date.now(),
+      publishedAt: b.status === "published" ? Date.now() : null
+    };
+    events.push(ev);
+    eventsSave(events);
+    res.json({ ok: true, event: ev, publicUrl: `/e/${ev.slug}` });
+  } catch (e) { res.status(500).json({ ok: false, error: e?.message }); }
+});
+app.put("/api/events/:id", (req, res) => {
+  const events = eventsLoad();
+  const idx = events.findIndex(e => e.id === req.params.id);
+  if (idx < 0) return res.status(404).json({ ok: false, error: "evento nao encontrado" });
+  const ev = events[idx];
+  Object.assign(ev, req.body || {});
+  if (req.body?.status === "published" && !ev.publishedAt) ev.publishedAt = Date.now();
+  events[idx] = ev;
+  eventsSave(events);
+  res.json({ ok: true, event: ev });
+});
+app.delete("/api/events/:id", (req, res) => {
+  const events = eventsLoad().filter(e => e.id !== req.params.id);
+  eventsSave(events);
+  res.json({ ok: true });
+});
+app.get("/api/events/:id/tickets", (req, res) => {
+  const tickets = ticketsLoad().filter(t => t.eventId === req.params.id);
+  res.json({ ok: true, count: tickets.length, items: tickets });
+});
+app.post("/api/events/:id/checkin/:ticketId", (req, res) => {
+  const tickets = ticketsLoad();
+  const idx = tickets.findIndex(t => t.id === req.params.ticketId && t.eventId === req.params.id);
+  if (idx < 0) return res.status(404).json({ ok: false, error: "ingresso nao encontrado" });
+  const tk = tickets[idx];
+  if (tk.status === "used") return res.status(400).json({ ok: false, error: "ja usado", checkedInAt: tk.checkedInAt });
+  tk.status = "used";
+  tk.checkedInAt = Date.now();
+  tk.checkedInBy = req.body?.by || "manual";
+  tickets[idx] = tk;
+  ticketsSave(tickets);
+  broadcastSSE({ type: "event_checkin", data: { ticketId: tk.id, eventId: tk.eventId, attendee: tk.attendeeName } });
+  res.json({ ok: true, ticket: tk });
+});
+app.get("/api/events/:id/export.csv", (req, res) => {
+  const ev = eventsLoad().find(e => e.id === req.params.id);
+  if (!ev) return res.status(404).send("evento nao encontrado");
+  const tickets = ticketsLoad().filter(t => t.eventId === req.params.id);
+  const ttById = Object.fromEntries((ev.ticketTypes || []).map(t => [t.id, t]));
+  const rows = [["id", "name", "email", "phone", "ticketType", "price", "status", "createdAt", "checkedInAt"].join(",")];
+  tickets.forEach(t => {
+    rows.push([t.id, t.attendeeName, t.attendeeEmail, t.attendeePhone, ttById[t.ticketTypeId]?.name || "", t.price, t.status, new Date(t.createdAt).toISOString(), t.checkedInAt ? new Date(t.checkedInAt).toISOString() : ""].map(v => `"${String(v).replace(/"/g, '""')}"`).join(","));
+  });
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="evento-${ev.slug}-${new Date().toISOString().slice(0, 10)}.csv"`);
+  res.send("\uFEFF" + rows.join("\n"));
+});
 
 app.listen(PORT, () => {
   console.log(`[speakers-crm] rodando na porta ${PORT}`);
