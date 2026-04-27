@@ -18,11 +18,14 @@ from .tools import TOOL_SCHEMAS, execute_tool
 
 log = logging.getLogger("agent.core")
 
-MODEL = os.environ.get("AGENT_MODEL", "claude-opus-4-7")
+MODEL = os.environ.get("AGENT_MODEL", "claude-haiku-4-5")
 MAX_TOKENS = int(os.environ.get("AGENT_MAX_TOKENS", "4096"))
 MAX_LOOP_STEPS = int(os.environ.get("AGENT_MAX_LOOP_STEPS", "12"))
 WHITELIST = {p.strip() for p in os.environ.get("AGENT_WHITELIST", "").split(",") if p.strip()}
 DEFAULT_MODE = os.environ.get("AGENT_MODE", "treino")
+LID_MAX_PHONE_DIGITS = 13  # Brasil: 5512982933600 = 13 digitos. Acima disso e @lid (privacy ID).
+MIN_MESSAGE_LEN = 3
+DEDUP_WINDOW_SEC = 60
 
 _client: AsyncAnthropic | None = None
 
@@ -183,24 +186,46 @@ def build_system_prompt(contact_phone: str, contact_name: str | None) -> str:
 
 
 async def handle_inbound(phone: str, message: str, contact_name: str | None = None) -> dict[str, Any]:
-    """Ponto de entrada quando uma mensagem chega via webhook."""
+    """Ponto de entrada quando uma mensagem chega via webhook.
+
+    Aplica filtros pre-API (whitelist, lid, length, dedup) antes de chamar
+    Anthropic — economiza rate limit e evita responder spam.
+    """
     digits = "".join(ch for ch in phone if ch.isdigit())
     if not digits:
         return {"ok": False, "reason": "phone_invalid"}
 
+    # Filtro 1: privacy IDs (@lid) sao geralmente grupos / contatos com privacidade.
+    # Phones BR tem ate 13 digitos; @lid tem 14-15. Em modo treino + whitelist nao
+    # bate aqui, mas em producao isso protege contra ruido.
+    if len(digits) > LID_MAX_PHONE_DIGITS:
+        memory.audit("inbound_lid_filtered", digits, {"message": (message or "")[:120]}, {"reason": "lid_too_long"}, True)
+        return {"ok": True, "ignored": True, "reason": "lid_filtered"}
+
+    body = (message or "").strip()
+    if len(body) < MIN_MESSAGE_LEN:
+        memory.audit("inbound_short_filtered", digits, {"message": body}, {"reason": "too_short"}, True)
+        return {"ok": True, "ignored": True, "reason": "too_short"}
+
+    if memory.is_recent_duplicate(digits, body, window_sec=DEDUP_WINDOW_SEC):
+        memory.audit("inbound_duplicate_filtered", digits, {"message": body[:120]}, {"reason": f"dup_{DEDUP_WINDOW_SEC}s"}, True)
+        return {"ok": True, "ignored": True, "reason": "duplicate"}
+
     if not is_allowed(digits):
         log.info("ignorando %s — fora da whitelist (modo treino)", digits)
-        memory.audit("inbound_ignored", digits, {"message": message}, {"reason": "whitelist"}, True)
+        memory.audit("inbound_ignored", digits, {"message": body}, {"reason": "whitelist"}, True)
         return {"ok": True, "ignored": True, "reason": "whitelist"}
 
     conv_id = memory.get_or_create_conversation(digits, contact_name)
     history = memory.load_history(conv_id, limit=80)
 
-    user_block = {"role": "user", "content": [{"type": "text", "text": message}]}
+    user_block = {"role": "user", "content": [{"type": "text", "text": body}]}
     history.append(user_block)
-    memory.append_message(conv_id, "user", [{"type": "text", "text": message}])
+    memory.append_message(conv_id, "user", [{"type": "text", "text": body}])
 
-    system = build_system_prompt(digits, contact_name)
+    system_text = build_system_prompt(digits, contact_name)
+    # Prompt caching: system prompt vai pra cache (TTL 5min), economiza ~90% dos tokens em chamadas seguidas
+    system_blocks = [{"type": "text", "text": system_text, "cache_control": {"type": "ephemeral"}}]
 
     steps = 0
     final_text_parts: list[str] = []
@@ -213,7 +238,7 @@ async def handle_inbound(phone: str, message: str, contact_name: str | None = No
         resp = await client().messages.create(
             model=MODEL,
             max_tokens=MAX_TOKENS,
-            system=system,
+            system=system_blocks,
             tools=TOOL_SCHEMAS,
             messages=history,
         )

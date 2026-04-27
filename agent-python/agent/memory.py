@@ -248,6 +248,42 @@ def load_history(conversation_id: int, limit: int = 60) -> list[dict[str, Any]]:
         return msgs
 
 
+def is_recent_duplicate(phone: str, message: str, window_sec: int = 60) -> bool:
+    """Detecta msg duplicada do mesmo phone num intervalo curto (anti-spam)."""
+    init_db()
+    cutoff = now_ms() - window_sec * 1000
+    digits = "".join(ch for ch in phone if ch.isdigit())
+    target = (message or "").strip()
+    if not target:
+        return False
+    with db() as conn:
+        conv = conn.execute(
+            "SELECT id FROM conversations WHERE contact_phone=?", (digits,)
+        ).fetchone()
+        if not conv:
+            return False
+        rows = conn.execute(
+            """
+            SELECT content_json FROM messages
+            WHERE conversation_id=? AND role='user' AND created_at > ?
+            ORDER BY id DESC LIMIT 8
+            """,
+            (conv["id"], cutoff),
+        ).fetchall()
+        for r in rows:
+            try:
+                blocks = json.loads(r["content_json"])
+            except Exception:
+                continue
+            if not isinstance(blocks, list):
+                continue
+            for b in blocks:
+                if isinstance(b, dict) and b.get("type") == "text":
+                    if (b.get("text") or "").strip() == target:
+                        return True
+    return False
+
+
 def _json_default(obj: Any) -> Any:
     # Anthropic SDK objects expose model_dump
     if hasattr(obj, "model_dump"):
