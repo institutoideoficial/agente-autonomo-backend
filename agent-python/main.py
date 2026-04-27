@@ -1,4 +1,8 @@
-"""FastAPI app — recebe webhook do CRM (mensagens entrantes do Bravos) e dispara loop do agente."""
+"""FastAPI app — recebe webhook do Bravos dedicado e dispara loop do agente.
+
+- /inbox        : usado pelo CRM Imperador (compat) — phone+message ja extraidos
+- /inbox-bravos : usado pelo bravos-agent (instancia dedicada) — payload cru do Bravos
+"""
 
 from __future__ import annotations
 
@@ -6,7 +10,7 @@ import logging
 import os
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from agent import core, memory
@@ -54,6 +58,43 @@ async def inbox(payload: InboxPayload) -> dict[str, Any]:
     log.info("inbox de %s (%s): %s", digits, payload.name, payload.message[:80])
     result = await core.handle_inbound(digits, payload.message, payload.name)
     return result
+
+
+@app.post("/inbox-bravos")
+async def inbox_bravos(req: Request) -> dict[str, Any]:
+    """Webhook cru do Bravos.
+
+    Payload tipico:
+      {"type": "message_in", "data": {"chat_id": "...@c.us", "from_id": "5512...",
+       "body": "oi", "fromMe": false, "pushname": "Fulano"},
+       "clientId": "agent-bot", "timestamp": 169...}
+    """
+    try:
+        payload = await req.json()
+    except Exception:
+        raise HTTPException(400, "json invalido")
+
+    typ = payload.get("type")
+    data = payload.get("data") or {}
+
+    if typ != "message_in":
+        # ready / disconnected / message_out — apenas registra no audit
+        memory.audit("bravos_event", None, {"type": typ}, {"data_keys": list(data.keys())}, True)
+        return {"ok": True, "ignored": True, "reason": f"type={typ}"}
+
+    if data.get("fromMe"):
+        return {"ok": True, "ignored": True, "reason": "fromMe"}
+
+    raw = data.get("from_id") or (data.get("chat_id") or "").split("@")[0]
+    digits = "".join(ch for ch in str(raw) if ch.isdigit())
+    body = str(data.get("body") or "").strip()
+    name = data.get("pushname")
+
+    if not digits or not body:
+        return {"ok": True, "ignored": True, "reason": "empty_phone_or_body"}
+
+    log.info("inbox-bravos de %s (%s): %s", digits, name, body[:80])
+    return await core.handle_inbound(digits, body, name)
 
 
 # ---------------------------------------------------------------------------

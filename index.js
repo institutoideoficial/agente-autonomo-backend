@@ -458,6 +458,79 @@ app.get("/wa/qr", async (req, res) => {
   }
 });
 
+// QR do bravos-agent (2a instancia, numero dedicado do agente autonomo)
+const BRAVOS_AGENT_URL = (process.env.BRAVOS_AGENT_URL || "http://bravos-agent:3001").replace(/\/$/, "");
+app.get("/wa-agent/qr", async (req, res) => {
+  try {
+    const r = await fetch(`${BRAVOS_AGENT_URL}/qr.png`, { headers: { "bypass-tunnel-reminder": "true" } });
+    if (r.ok) {
+      const buf = Buffer.from(await r.arrayBuffer());
+      res.setHeader('Content-Type', r.headers.get('content-type') || 'image/png');
+      res.setHeader('Cache-Control', 'no-store');
+      return res.send(buf);
+    }
+    const r2 = await fetch(`${BRAVOS_AGENT_URL}/`, { headers: { "bypass-tunnel-reminder": "true" } });
+    const html = await r2.text();
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(html);
+  } catch (e) {
+    res.status(503).send(`<h2>bravos-agent offline</h2><p>${e?.message}</p>`);
+  }
+});
+
+app.get("/wa-agent/status", async (req, res) => {
+  try {
+    const r = await fetch(`${BRAVOS_AGENT_URL}/status`, { headers: { "Authorization": `Bearer ${BRAVOS_TOKEN}` } });
+    const d = await r.json().catch(() => ({}));
+    res.json(d);
+  } catch (e) {
+    res.status(503).json({ error: e?.message });
+  }
+});
+
+app.get("/wa-agent", async (req, res) => {
+  res.send(`<!doctype html><html><head><meta charset="utf-8"><title>Conectar WhatsApp do Agente</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>body{font-family:-apple-system,sans-serif;background:#0a0a0a;color:#e8e6e1;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:20px;text-align:center}
+.box{max-width:520px;background:#141312;border:1px solid #262421;border-radius:14px;padding:28px}
+h1{color:#C8A84B;margin:0 0 8px;font-size:22px}
+.tag{display:inline-block;background:#C8A84B22;color:#C8A84B;border-radius:6px;padding:3px 10px;font-size:11px;margin-bottom:12px}
+.qr{background:#fff;padding:14px;border-radius:10px;margin:18px auto;max-width:300px;display:block}
+.qr img{width:100%;display:block}
+.steps{text-align:left;font-size:13px;color:#8a8580;margin-top:16px;line-height:1.6}
+.status{font-size:12px;color:#8a8580;margin-top:14px}
+.status.on{color:#10b981}
+</style></head><body>
+<div class="box">
+<span class="tag">AGENTE AUTONOMO</span>
+<h1>📱 Conectar WhatsApp do Agente</h1>
+<div style="font-size:13px;color:#8a8580">Escaneia o QR no celular do numero dedicado ao agente</div>
+<div class="qr"><img src="/wa-agent/qr?t=${Date.now()}" id="qrimg" onerror="this.parentElement.innerHTML='<div style=\\'color:#666;padding:30px\\'>QR carregando ou ja autenticado...</div>'"></div>
+<div class="steps">
+<strong>Como escanear:</strong><br>
+1. Abre WhatsApp no celular do <strong>numero do agente</strong><br>
+2. ⋮ menu &rarr; Aparelhos conectados<br>
+3. <strong>Conectar um aparelho</strong><br>
+4. Aponta camera pro QR acima
+</div>
+<div class="status" id="st">Aguardando conexao...</div>
+</div>
+<script>
+async function check(){
+  try{
+    var r = await fetch('/wa-agent/status');
+    var d = await r.json();
+    var conn = d.state === 'connected' || (d.instance && d.instance.isReady);
+    var st = document.getElementById('st');
+    if(conn){ st.className='status on'; st.innerHTML='✅ Conectado! Pode fechar essa pagina.'; document.getElementById('qrimg').style.opacity='.3'; return; }
+    setTimeout(function(){ document.getElementById('qrimg').src='/wa-agent/qr?t='+Date.now(); check(); }, 4000);
+  }catch(e){ setTimeout(check, 5000); }
+}
+setTimeout(check, 2000);
+</script>
+</body></html>`);
+});
+
 // Pagina amigavel pra escanear QR
 app.get("/wa", async (req, res) => {
   res.send(`<!doctype html><html><head><meta charset="utf-8"><title>Conectar WhatsApp</title>

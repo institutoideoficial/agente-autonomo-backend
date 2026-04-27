@@ -31,6 +31,29 @@ services:
       - "3001"
     # NAO exponho a porta ao host; Caddy eh o unico ponto de entrada
 
+  bravos-agent:
+    # 2a instancia do Bravos dedicada ao agente autonomo (numero 6258)
+    # Sessao WhatsApp separada da Vanessa (3600).
+    build:
+      context: ../../bravos-whatsapp-api
+      dockerfile: Dockerfile
+    container_name: bravos-agent
+    restart: unless-stopped
+    environment:
+      API_TOKEN: ${API_TOKEN}
+      CLIENT_ID: agent-bot
+      DB_PATH: /app/data/whatsapp.db
+      LOG_LEVEL: info
+      PUPPETEER_EXECUTABLE_PATH: /usr/bin/chromium
+      PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: "true"
+      WEBHOOK_URL: http://agent:8000/inbox-bravos
+      PORT: "3001"
+    volumes:
+      - bravos_agent_wwebjs:/app/.wwebjs_auth
+      - bravos_agent_data:/app/data
+    expose:
+      - "3001"
+
   crm:
     build:
       context: ../
@@ -45,6 +68,7 @@ services:
       PORT: "3000"
       BRAVOS_URL: ${BRAVOS_URL:-http://bravos:3001}
       BRAVOS_TOKEN: ${API_TOKEN}
+      BRAVOS_AGENT_URL: ${BRAVOS_AGENT_URL:-http://bravos-agent:3001}
       AGENT_URL: ${AGENT_URL:-http://agent:8000}
       GOOGLE_AUTO_EVENT: ${GOOGLE_AUTO_EVENT:-false}
       GOOGLE_AUTO_EVENT_DELAY_HOURS: ${GOOGLE_AUTO_EVENT_DELAY_HOURS:-24}
@@ -57,6 +81,7 @@ services:
       - "3000"
     depends_on:
       - bravos
+      - bravos-agent
       - agent
 
   agent:
@@ -76,6 +101,8 @@ services:
       AGENT_DB_PATH: /app/data/agent.db
       AGENT_LOG_LEVEL: ${AGENT_LOG_LEVEL:-INFO}
       CRM_URL: ${CRM_URL:-http://crm:3000}
+      BRAVOS_URL: ${AGENT_BRAVOS_URL:-http://bravos-agent:3001}
+      BRAVOS_TOKEN: ${API_TOKEN}
     volumes:
       - agent_data:/app/data
     expose:
@@ -104,6 +131,8 @@ volumes:
   crm_data:
   bravos_wwebjs:
   bravos_data:
+  bravos_agent_wwebjs:
+  bravos_agent_data:
   agent_data:
   caddy_data:
   caddy_config:

@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from . import crm_client, memory
+from . import bravos_client, memory
 
 TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
@@ -146,10 +146,10 @@ async def execute_tool(name: str, args: dict[str, Any], *, contact_phone: str | 
 
 async def _dispatch(name: str, args: dict[str, Any]) -> Any:
     if name == "send_whatsapp_message":
-        return await crm_client.send_whatsapp(args["phone"], args["message"])
+        return await bravos_client.send_message(args["phone"], args["message"])
 
     if name == "get_conversation_history":
-        return await crm_client.get_history(args["phone"], args.get("limit", 30))
+        return await bravos_client.get_history(args["phone"], args.get("limit", 30))
 
     if name == "remember":
         memory.brain_set(
