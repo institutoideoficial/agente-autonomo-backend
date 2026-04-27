@@ -564,6 +564,25 @@ app.post("/api/pairing-code", async (req, res) => {
 
 // Webhook para receber mensagens do Bravos
 // Bravos envia: { type: "message_in"|"message_out"|"ready"|"disconnected", data: {...}, clientId, timestamp }
+const AGENT_URL = (process.env.AGENT_URL || "").replace(/\/$/, "");
+
+async function forwardToAgent(inner) {
+  if (!AGENT_URL) return;
+  if (!inner || inner.fromMe) return;
+  const phone = String(inner.from_id || (inner.chat_id || "").split("@")[0] || "").replace(/\D/g, "");
+  const message = String(inner.body || "").trim();
+  if (!phone || !message) return;
+  try {
+    await fetch(`${AGENT_URL}/inbox`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone, message, name: inner.pushname || null, chatId: inner.chat_id || null })
+    });
+  } catch (e) {
+    console.error("[agent-fanout]", e?.message);
+  }
+}
+
 app.post("/api/webhook/bravos", async (req, res) => {
   try {
     const msg = req.body || {};
@@ -576,6 +595,9 @@ app.post("/api/webhook/bravos", async (req, res) => {
         clientId: msg.clientId,
         timestamp: msg.timestamp
       });
+      if (innerType === "message_in") {
+        forwardToAgent(inner);
+      }
     } else if (innerType === "ready") {
       broadcastSSE({ type: "whatsapp_ready", timestamp: msg.timestamp });
     } else if (innerType === "disconnected") {

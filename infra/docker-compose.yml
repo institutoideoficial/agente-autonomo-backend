@@ -45,6 +45,7 @@ services:
       PORT: "3000"
       BRAVOS_URL: ${BRAVOS_URL:-http://bravos:3001}
       BRAVOS_TOKEN: ${API_TOKEN}
+      AGENT_URL: ${AGENT_URL:-http://agent:8000}
       GOOGLE_AUTO_EVENT: ${GOOGLE_AUTO_EVENT:-false}
       GOOGLE_AUTO_EVENT_DELAY_HOURS: ${GOOGLE_AUTO_EVENT_DELAY_HOURS:-24}
       GOOGLE_AUTO_EVENT_DURATION_MIN: ${GOOGLE_AUTO_EVENT_DURATION_MIN:-30}
@@ -56,6 +57,29 @@ services:
       - "3000"
     depends_on:
       - bravos
+      - agent
+
+  agent:
+    build:
+      context: ../agent-python
+      dockerfile: Dockerfile
+    container_name: agent
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      AGENT_MODEL: ${AGENT_MODEL:-claude-opus-4-7}
+      AGENT_MODEL_FAST: ${AGENT_MODEL_FAST:-claude-haiku-4-5}
+      AGENT_MODE: ${AGENT_MODE:-treino}
+      AGENT_WHITELIST: ${AGENT_WHITELIST:-5512982933600}
+      AGENT_DB_PATH: /app/data/agent.db
+      AGENT_LOG_LEVEL: ${AGENT_LOG_LEVEL:-INFO}
+      CRM_URL: ${CRM_URL:-http://crm:3000}
+    volumes:
+      - agent_data:/app/data
+    expose:
+      - "8000"
 
   caddy:
     image: caddy:2-alpine
@@ -80,6 +104,7 @@ volumes:
   crm_data:
   bravos_wwebjs:
   bravos_data:
+  agent_data:
   caddy_data:
   caddy_config:
 
