@@ -26,7 +26,7 @@ app.use(express.json({
 // Setar BASIC_AUTH_USER + BASIC_AUTH_PASS no .env. Excecoes: webhooks externos, healthcheck, SSE.
 const BASIC_AUTH_USER = process.env.BASIC_AUTH_USER || '';
 const BASIC_AUTH_PASS = process.env.BASIC_AUTH_PASS || '';
-const BASIC_AUTH_BYPASS = ['/health', '/api/webhook/', '/oauth/google/'];
+const BASIC_AUTH_BYPASS = ['/health', '/healthz', '/api/webhook/', '/oauth/google/'];
 if (BASIC_AUTH_USER && BASIC_AUTH_PASS) {
   app.use((req, res, next) => {
     if (BASIC_AUTH_BYPASS.some(p => req.url.startsWith(p))) return next();
@@ -61,6 +61,41 @@ function broadcastSSE(data) {
 
 // Health
 app.get("/health", (req, res) => res.json({ ok: true, service: "speakers-crm-backend" }));
+
+// v4.32: /healthz - deep healthcheck pra UptimeRobot/monitor externo (bypass auth)
+// Retorna 200 OK se tudo crítico funciona, 503 se algo essencial caiu.
+// Checa: app vivo, disk leitura/escrita data dir, anthropic key configurada, DNS propagated.
+app.get("/healthz", async (req, res) => {
+  const checks = {};
+  let allOk = true;
+  // 1. App vivo (sempre passa se response chega aqui)
+  checks.app = { ok: true, uptimeSec: Math.round(process.uptime()) };
+  // 2. Data dir leitura/escrita
+  try {
+    const fsLib = require('fs');
+    const testFile = path.join(__dirname, 'data', '.healthz-write-test');
+    fsLib.writeFileSync(testFile, String(Date.now()));
+    fsLib.unlinkSync(testFile);
+    checks.disk = { ok: true };
+  } catch (e) { checks.disk = { ok: false, error: e?.message }; allOk = false; }
+  // 3. AI config
+  checks.ai = { ok: !!process.env.ANTHROPIC_API_KEY, configured: !!process.env.ANTHROPIC_API_KEY };
+  // (nao bloqueia 503 se IA nao configurada — feature opcional)
+  // 4. DNS propagated flag
+  try {
+    const flag = JSON.parse(require('fs').readFileSync(path.join(__dirname, 'data', 'dns-propagated.flag'), 'utf8'));
+    checks.dns = { ok: !!flag.propagated, propagatedAt: flag.propagatedAt };
+  } catch { checks.dns = { ok: false, hint: "ainda nao propagou" }; }
+  // (nao bloqueia 503 — DNS pode tar fora se acessou via IP)
+  // 5. Bravos opcional (se config quebrou, nao falha — feature)
+  try {
+    const r = await fetch(`${BRAVOS_URL}/health`, { headers: { 'bypass-tunnel-reminder': 'true' }, signal: AbortSignal.timeout(3000) });
+    checks.bravos = { ok: r.ok, status: r.status };
+  } catch (e) { checks.bravos = { ok: false, error: e?.message?.slice(0, 80) }; }
+
+  const code = allOk ? 200 : 503;
+  res.status(code).json({ ok: allOk, status: allOk ? "healthy" : "degraded", checks, ts: new Date().toISOString() });
+});
 
 // SSE endpoint para frontend
 app.get("/events", (req, res) => {
