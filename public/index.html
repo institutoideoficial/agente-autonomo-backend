@@ -2063,6 +2063,7 @@ function kiwifyCsvUrl(){
 
 // === WHATSAPP CLOUD API (v4.23) ===
 async function fetchWaCloudStatus(){ try{ var r=await fetch('/api/integrations/wa-cloud/status'); return await r.json(); }catch(e){ return null; } }
+async function fetchBravosStatus(){ try{ var r=await fetch('/api/insights/health'); var d=await r.json(); return d.bravos||null; }catch(e){ return null; } }
 async function fetchWaCloudEvents(limit){ try{ var r=await fetch('/api/integrations/wa-cloud/events?limit='+(limit||30)); var d=await r.json(); return d.items||[]; }catch(e){ return []; } }
 async function waCloudTest(){
   var phone = prompt('Telefone destino (so numeros, com DDI - ex: 5511999990001):');
@@ -3246,11 +3247,18 @@ function criarConv(){
   var id='c'+Date.now();
   var dept=document.getElementById('nd').value;
   var ph=((document.getElementById('np')||{}).value||'').toString().replace(/\D/g,'');
-  convs[id]={id:id,nm:nm,ph:ph,dept:dept,st:'open',tag:'',ag:'thiago',msgs:[],nota:''};
+  // v4.33 fix: se tem telefone, marca como conv real (envia via Bravos/Cloud) + seta chatId
+  var hasPhone = ph && ph.length >= 10;
+  convs[id]={
+    id:id, nm:nm, ph:ph, dept:dept, st:'open', tag:'', ag:'thiago', msgs:[], nota:'',
+    real: hasPhone,
+    chatId: hasPhone ? (ph + '@c.us') : ''
+  };
   closeModal('mnew');
   document.getElementById('nn').value='';
   document.getElementById('np').value='';
   renderSB();selConv(id);
+  if(hasPhone && typeof toast==='function') toast('✓ Conversa criada — pode mandar msg que vai pelo WhatsApp');
 }
 
 function openModal(id){document.getElementById(id).classList.add('open');}
@@ -3762,6 +3770,30 @@ setTimeout(checkStatus,2000);
     }catch(e){ console.warn("[imperador] disableAllBots err", e); }
   }
   disableAllBots();
+
+  // v4.33 fix: migra convs antigas criadas sem real:true (criarConv pre-fix)
+  // Toda conv com telefone valido (>=10 digitos) vira real
+  function migrateConvsForBravos(){
+    try{
+      if(!window.convs) return;
+      var migrated = 0;
+      Object.values(window.convs).forEach(function(c){
+        if(c.ph && String(c.ph).replace(/\D/g,'').length >= 10){
+          if(!c.real || !c.chatId){
+            c.real = true;
+            c.chatId = c.chatId || (String(c.ph).replace(/\D/g,'') + '@c.us');
+            migrated++;
+          }
+        }
+      });
+      if(migrated > 0){
+        try{ if(typeof saveConvs==='function') saveConvs(); }catch(e){}
+        try{ localStorage.setItem('imp_convs_v1', JSON.stringify(window.convs)); }catch(e){}
+        console.log('[imperador] migrated ' + migrated + ' convs to real:true');
+      }
+    }catch(e){ console.warn('[imperador] migrate err', e); }
+  }
+  migrateConvsForBravos();
 
   async function checkConnection(){
     try{
