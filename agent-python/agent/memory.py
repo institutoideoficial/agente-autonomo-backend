@@ -83,6 +83,18 @@ CREATE TABLE IF NOT EXISTS audit_log (
     created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_log(action, created_at);
+
+CREATE TABLE IF NOT EXISTS oauth_tokens (
+    provider TEXT PRIMARY KEY,
+    account TEXT,
+    access_token TEXT NOT NULL,
+    refresh_token TEXT,
+    token_type TEXT,
+    scope TEXT,
+    expires_at INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
 """
 
 
@@ -246,6 +258,68 @@ def load_history(conversation_id: int, limit: int = 60) -> list[dict[str, Any]]:
             for r in reversed(rows)
         ]
         return msgs
+
+
+# ---------------------------------------------------------------------------
+# OAUTH TOKENS
+# ---------------------------------------------------------------------------
+
+def oauth_save(
+    provider: str,
+    account: str | None,
+    access_token: str,
+    refresh_token: str | None,
+    token_type: str | None,
+    scope: str | None,
+    expires_at_ms: int,
+) -> None:
+    init_db()
+    ts = now_ms()
+    with db() as conn:
+        conn.execute(
+            """
+            INSERT INTO oauth_tokens(provider, account, access_token, refresh_token,
+                                     token_type, scope, expires_at, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(provider) DO UPDATE SET
+                account = excluded.account,
+                access_token = excluded.access_token,
+                refresh_token = COALESCE(excluded.refresh_token, oauth_tokens.refresh_token),
+                token_type = excluded.token_type,
+                scope = excluded.scope,
+                expires_at = excluded.expires_at,
+                updated_at = excluded.updated_at
+            """,
+            (provider, account, access_token, refresh_token, token_type, scope, expires_at_ms, ts, ts),
+        )
+
+
+def oauth_get(provider: str) -> dict[str, Any] | None:
+    init_db()
+    with db() as conn:
+        row = conn.execute(
+            "SELECT * FROM oauth_tokens WHERE provider=?", (provider,)
+        ).fetchone()
+        if not row:
+            return None
+        return {
+            "provider": row["provider"],
+            "account": row["account"],
+            "access_token": row["access_token"],
+            "refresh_token": row["refresh_token"],
+            "token_type": row["token_type"],
+            "scope": row["scope"],
+            "expires_at": row["expires_at"],
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+        }
+
+
+def oauth_delete(provider: str) -> bool:
+    init_db()
+    with db() as conn:
+        cur = conn.execute("DELETE FROM oauth_tokens WHERE provider=?", (provider,))
+        return cur.rowcount > 0
 
 
 def is_recent_duplicate(phone: str, message: str, window_sec: int = 60) -> bool:

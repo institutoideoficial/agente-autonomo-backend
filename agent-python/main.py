@@ -11,9 +11,10 @@ import os
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
-from agent import core, memory
+from agent import core, google_oauth, memory
 
 logging.basicConfig(
     level=os.environ.get("AGENT_LOG_LEVEL", "INFO"),
@@ -140,3 +141,61 @@ def set_mode(body: ModeBody) -> dict[str, Any]:
         raise HTTPException(400, "mode deve ser treino ou producao")
     memory.brain_set("config", "mode", body.mode)
     return {"ok": True, "mode": body.mode}
+
+
+# ---------------------------------------------------------------------------
+# OAUTH GOOGLE PROPRIO DO AGENT (construindonovoeu@gmail.com)
+# Conta separada do CRM Imperador. Tokens em SQLite (volume agent_data).
+# ---------------------------------------------------------------------------
+
+@app.get("/oauth/google/status")
+def oauth_google_status() -> dict[str, Any]:
+    return google_oauth.status()
+
+
+@app.get("/oauth/google/start")
+def oauth_google_start():
+    if not google_oauth.is_configured():
+        raise HTTPException(
+            500,
+            "OAuth Google nao configurado. Setar AGENT_GOOGLE_CLIENT_ID e AGENT_GOOGLE_CLIENT_SECRET no .env.",
+        )
+    url, _state = google_oauth.authorization_url()
+    return RedirectResponse(url, status_code=302)
+
+
+@app.get("/oauth/google/callback", response_class=HTMLResponse)
+async def oauth_google_callback(code: str | None = None, state: str | None = None, error: str | None = None) -> HTMLResponse:
+    if error:
+        return HTMLResponse(f"<h2>Erro do Google: {error}</h2>", status_code=400)
+    if not code or not state:
+        raise HTTPException(400, "code/state ausentes")
+    if not google_oauth.consume_state(state):
+        raise HTTPException(400, "state invalido ou expirado")
+    try:
+        info = await google_oauth.exchange_code(code)
+    except Exception as e:
+        log.exception("oauth callback")
+        return HTMLResponse(f"<h2>Falha ao trocar code: {e}</h2>", status_code=500)
+    return HTMLResponse(
+        f"""
+        <!doctype html><html><head><meta charset=utf-8><title>Sofia conectada</title>
+        <style>body{{font-family:-apple-system,sans-serif;background:#0a0a0a;color:#e8e6e1;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:20px;text-align:center}}
+        .box{{max-width:520px;background:#141312;border:1px solid #262421;border-radius:14px;padding:28px}}
+        h1{{color:#10b981;margin:0 0 12px}}
+        .info{{font-size:14px;color:#8a8580;line-height:1.6;text-align:left;margin-top:16px}}
+        code{{background:#222;padding:2px 6px;border-radius:4px;color:#C8A84B}}</style>
+        </head><body><div class=box>
+        <h1>✅ Conectado!</h1>
+        <div>Sofia agora tem acesso ao Google de <code>{info.get('account')}</code>.</div>
+        <div class=info>Refresh token: {'salvo' if info.get('has_refresh') else '⚠️ NAO recebido (re-autorize com prompt=consent)'}<br>
+        Scopes: <code>{info.get('scopes') or '-'}</code></div>
+        </div></body></html>
+        """
+    )
+
+
+@app.delete("/oauth/google")
+def oauth_google_disconnect() -> dict[str, Any]:
+    deleted = memory.oauth_delete("google")
+    return {"ok": True, "deleted": deleted}

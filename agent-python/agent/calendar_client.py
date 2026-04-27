@@ -1,30 +1,22 @@
-"""Cliente do Google Calendar via CRM Imperador.
+"""Cliente do Google Calendar usando OAuth PROPRIO do agente.
 
-O CRM ja tem OAuth do Google conectado (institutoideoficial@gmail.com).
-Aqui so encapsulamos os 3 endpoints do CRM com Basic Auth.
+Conta vinculada: construindonovoeu@gmail.com (NUNCA institutoideoficial@gmail.com).
+Tokens vem de agent/google_oauth.py. Nao passa pelo CRM Imperador.
 """
 
 from __future__ import annotations
 
-import base64
-import os
+import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from urllib.parse import urlencode
 
 import httpx
 
-CRM_URL = os.environ.get("CRM_URL", "http://crm:3000").rstrip("/")
-BASIC_USER = os.environ.get("CRM_BASIC_USER", "")
-BASIC_PASS = os.environ.get("CRM_BASIC_PASS", "")
+from . import google_oauth
+
+API_BASE = "https://www.googleapis.com/calendar/v3"
 TIMEOUT = httpx.Timeout(30.0, connect=5.0)
-
-
-def _headers() -> dict[str, str]:
-    h = {"Content-Type": "application/json"}
-    if BASIC_USER and BASIC_PASS:
-        creds = base64.b64encode(f"{BASIC_USER}:{BASIC_PASS}".encode()).decode()
-        h["Authorization"] = f"Basic {creds}"
-    return h
 
 
 def _now() -> str:
@@ -35,32 +27,57 @@ def _plus_days(days: int) -> str:
     return (datetime.now(timezone.utc) + timedelta(days=days)).isoformat()
 
 
-async def _request(method: str, path: str, *, params=None, json=None) -> dict[str, Any]:
-    async with httpx.AsyncClient(timeout=TIMEOUT) as c:
-        r = await c.request(
-            method,
-            f"{CRM_URL}{path}",
-            params=params,
-            json=json,
-            headers=_headers(),
-        )
-        try:
-            data = r.json()
-        except Exception:
-            data = {"raw": r.text}
-        if not isinstance(data, dict):
-            data = {"data": data}
-        data["_status"] = r.status_code
-        return data
+async def _auth_headers() -> dict[str, str]:
+    token = await google_oauth.get_access_token()
+    return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+
+
+def _normalize_event(e: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": e.get("id"),
+        "summary": e.get("summary"),
+        "description": e.get("description"),
+        "start": (e.get("start") or {}).get("dateTime") or (e.get("start") or {}).get("date"),
+        "end": (e.get("end") or {}).get("dateTime") or (e.get("end") or {}).get("date"),
+        "htmlLink": e.get("htmlLink"),
+        "meetLink": next(
+            (
+                ep.get("uri")
+                for ep in (e.get("conferenceData") or {}).get("entryPoints") or []
+                if ep.get("entryPointType") == "video"
+            ),
+            e.get("hangoutLink"),
+        ),
+        "attendees": [
+            {"email": a.get("email"), "name": a.get("displayName"), "status": a.get("responseStatus")}
+            for a in (e.get("attendees") or [])
+        ],
+        "status": e.get("status"),
+    }
 
 
 async def list_events(from_iso: str | None = None, to_iso: str | None = None, limit: int = 20) -> dict[str, Any]:
     params = {
-        "from": from_iso or _now(),
-        "to": to_iso or _plus_days(30),
-        "limit": min(int(limit), 100),
+        "timeMin": from_iso or _now(),
+        "timeMax": to_iso or _plus_days(30),
+        "maxResults": min(int(limit), 100),
+        "singleEvents": "true",
+        "orderBy": "startTime",
     }
-    return await _request("GET", "/api/integrations/google/events", params=params)
+    headers = await _auth_headers()
+    async with httpx.AsyncClient(timeout=TIMEOUT) as c:
+        r = await c.get(
+            f"{API_BASE}/calendars/primary/events?{urlencode(params)}",
+            headers={k: v for k, v in headers.items() if k != "Content-Type"},
+        )
+        try:
+            data = r.json()
+        except Exception:
+            return {"_status": r.status_code, "raw": r.text}
+    if r.status_code >= 400:
+        return {"_status": r.status_code, "error": (data.get("error") or {}).get("message") or data}
+    items = [_normalize_event(e) for e in data.get("items") or []]
+    return {"_status": 200, "ok": True, "count": len(items), "items": items}
 
 
 async def create_event(
@@ -74,21 +91,58 @@ async def create_event(
     attendee_emails: list[str] | None = None,
     phone: str | None = None,
 ) -> dict[str, Any]:
-    body: dict[str, Any] = {"summary": summary, "start": start}
+    start_dt = datetime.fromisoformat(start.replace("Z", "+00:00"))
     if end:
-        body["end"] = end
+        end_dt = datetime.fromisoformat(end.replace("Z", "+00:00"))
     else:
-        body["durationMin"] = int(duration_min)
+        end_dt = start_dt + timedelta(minutes=int(duration_min))
+
+    body: dict[str, Any] = {
+        "summary": summary,
+        "start": {"dateTime": start_dt.isoformat(), "timeZone": "America/Sao_Paulo"},
+        "end": {"dateTime": end_dt.isoformat(), "timeZone": "America/Sao_Paulo"},
+    }
     if description:
         body["description"] = description
-    if with_meet:
-        body["withMeet"] = True
     if attendee_emails:
         body["attendees"] = [{"email": e} for e in attendee_emails if e]
     if phone:
-        body["phone"] = phone
-    return await _request("POST", "/api/integrations/google/events", json=body)
+        body["extendedProperties"] = {"private": {"agentPhone": str(phone)}}
+    qs = ""
+    if with_meet:
+        body["conferenceData"] = {
+            "createRequest": {
+                "requestId": "sofia-" + secrets.token_hex(6),
+                "conferenceSolutionKey": {"type": "hangoutsMeet"},
+            }
+        }
+        qs = "?conferenceDataVersion=1&sendUpdates=all"
+    else:
+        qs = "?sendUpdates=all"
+
+    headers = await _auth_headers()
+    async with httpx.AsyncClient(timeout=TIMEOUT) as c:
+        r = await c.post(f"{API_BASE}/calendars/primary/events{qs}", headers=headers, json=body)
+        try:
+            data = r.json()
+        except Exception:
+            return {"_status": r.status_code, "raw": r.text}
+    if r.status_code >= 400:
+        return {"_status": r.status_code, "error": (data.get("error") or {}).get("message") or data}
+    return {"_status": 200, "ok": True, "event": _normalize_event(data)}
 
 
 async def delete_event(event_id: str) -> dict[str, Any]:
-    return await _request("DELETE", f"/api/integrations/google/events/{event_id}")
+    headers = await _auth_headers()
+    async with httpx.AsyncClient(timeout=TIMEOUT) as c:
+        r = await c.delete(
+            f"{API_BASE}/calendars/primary/events/{event_id}?sendUpdates=all",
+            headers={k: v for k, v in headers.items() if k != "Content-Type"},
+        )
+    if r.status_code in (200, 204):
+        return {"_status": r.status_code, "ok": True}
+    try:
+        data = r.json()
+    except Exception:
+        data = {"raw": r.text}
+    return {"_status": r.status_code, "error": (data.get("error") or {}).get("message") or data}

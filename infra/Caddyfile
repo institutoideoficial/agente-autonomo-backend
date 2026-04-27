@@ -9,6 +9,12 @@
 {$DOMAIN_CRM} {
     encode gzip
 
+    # OAuth do agente Sofia (separado do CRM): /agent-oauth/google/* -> agent:8000/oauth/google/*
+    handle_path /agent-oauth/* {
+        rewrite * /oauth{uri}
+        reverse_proxy agent:8000
+    }
+
     # SSE precisa manter conexao aberta; desabilita buffer do proxy
     @sse path /events
     handle @sse {
