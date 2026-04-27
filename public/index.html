@@ -820,6 +820,22 @@ async function renderEventosPage(main){
   }
   var items = (data && data.items) || [];
   var fmt = function(ts){ return ts ? new Date(ts).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'}) : '—'; };
+  // v4.34: formata periodo (suporta multi-dia)
+  var fmtPeriodo = function(start, end){
+    if(!start) return '—';
+    var s = new Date(start);
+    var sStr = s.toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'});
+    if(!end) return sStr;
+    var e = new Date(end);
+    var sameDay = s.toDateString() === e.toDateString();
+    if(sameDay){
+      // Mesmo dia: 27/04 14:00 → 18:00
+      return sStr + ' → ' + e.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+    } else {
+      // Multi-dia: 10/05 09:00 → 12/05 18:00
+      return sStr + ' → ' + e.toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'});
+    }
+  };
   var html='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;flex-wrap:wrap;gap:10px">'+
     '<h2 style="font-size:22px;margin:0">🎟️ Eventos</h2>'+
     '<button class="bok" onclick="eventoNovo()" style="background:var(--gold);color:#111;font-weight:700;padding:10px 18px">+ Novo evento</button>'+
@@ -840,7 +856,7 @@ async function renderEventosPage(main){
           '<span style="font-size:9px;background:'+statusColor+'33;color:'+statusColor+';padding:2px 8px;border-radius:8px;font-weight:700">'+statusLbl+'</span>'+
         '</div>'+
         '<div style="font-size:12px;color:var(--text2);margin-bottom:10px">'+(ev.type==='online'?'🌐':'📍')+' '+esc((ev.type==='online'?'Online':(ev.location?.venue||'Local')))+'</div>'+
-        '<div style="font-size:12px;color:var(--text2);margin-bottom:10px">📅 '+fmt(ev.startAt)+'</div>'+
+        '<div style="font-size:12px;color:var(--text2);margin-bottom:10px">📅 '+esc(fmtPeriodo(ev.startAt, ev.endAt))+'</div>'+
         '<div style="display:flex;justify-content:space-between;font-size:12px;padding-top:10px;border-top:1px solid var(--border)">'+
           '<span>🎟️ <strong style="color:var(--gold)">'+sold+'</strong>'+(capacity?' / '+capacity:'')+' inscritos</span>'+
           '<span style="color:var(--text2)">'+tts.length+' tipo'+(tts.length===1?'':'s')+'</span>'+
@@ -874,7 +890,18 @@ function eventoNovo(){
           '<option value="presencial">📍 Presencial</option>'+
           '<option value="hibrido">🔀 Híbrido</option>'+
         '</select>'+
-        '<input id="ev-start" type="datetime-local" style="background:var(--panel2);border:1px solid var(--border);color:var(--text);padding:10px;border-radius:8px;flex:2;min-width:200px;font-family:inherit">'+
+      '</div>'+
+      '<div style="background:var(--panel2);padding:12px;border-radius:8px">'+
+        '<div style="font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">📅 Data e horário</div>'+
+        '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">'+
+          '<div style="flex:1;min-width:200px"><div style="font-size:11px;color:var(--text2);margin-bottom:4px">Início</div>'+
+            '<input id="ev-start" type="datetime-local" style="width:100%;background:var(--panel);border:1px solid var(--border);color:var(--text);padding:8px;border-radius:6px;font-family:inherit;font-size:13px">'+
+          '</div>'+
+          '<div style="flex:1;min-width:200px"><div style="font-size:11px;color:var(--text2);margin-bottom:4px">Fim (opcional — pra evento multi-dia)</div>'+
+            '<input id="ev-end" type="datetime-local" style="width:100%;background:var(--panel);border:1px solid var(--border);color:var(--text);padding:8px;border-radius:6px;font-family:inherit;font-size:13px">'+
+          '</div>'+
+        '</div>'+
+        '<div style="font-size:11px;color:var(--text2);margin-top:8px;font-style:italic">💡 Pra evento de 1 dia: deixa fim vazio. Pra multi-dia: define início (ex: dia 10 09h) e fim (ex: dia 12 18h).</div>'+
       '</div>'+
       '<input id="ev-venue" placeholder="Local (se presencial) — ex: Auditório IDE, Curitiba" style="background:var(--panel2);border:1px solid var(--border);color:var(--text);padding:10px 12px;border-radius:8px;font-size:13px;font-family:inherit">'+
       '<div style="background:var(--panel2);padding:12px;border-radius:8px">'+
@@ -903,7 +930,11 @@ async function eventoSalvar(){
   var title = (document.getElementById('ev-title')||{}).value;
   if(!title || !title.trim()){ alert('Título obrigatório'); return; }
   var startStr = (document.getElementById('ev-start')||{}).value;
+  var endStr = (document.getElementById('ev-end')||{}).value;
   var startAt = startStr ? new Date(startStr).getTime() : null;
+  var endAt = endStr ? new Date(endStr).getTime() : null;
+  // valida: se fim definido, tem que ser depois do inicio
+  if(endAt && startAt && endAt <= startAt){ alert('Data de fim precisa ser DEPOIS do início'); return; }
   var ttPrice = Number((document.getElementById('ev-tt-price')||{}).value || 0);
   var ttQty = (document.getElementById('ev-tt-qty')||{}).value;
   var body = {
@@ -911,6 +942,7 @@ async function eventoSalvar(){
     description: (document.getElementById('ev-desc')||{}).value || '',
     type: (document.getElementById('ev-type')||{}).value || 'online',
     startAt: startAt,
+    endAt: endAt,
     location: { venue: (document.getElementById('ev-venue')||{}).value || '' },
     status: (document.getElementById('ev-publish')||{}).checked ? 'published' : 'draft',
     ticketTypes: [{
@@ -954,11 +986,20 @@ async function renderEventoDetalhePage(main){
     var ev = ed.event;
     var tickets = td.items || [];
     var fmt = function(ts){ return ts ? new Date(ts).toLocaleString('pt-BR') : '—'; };
+    var fmtPeriodo = function(start, end){
+      if(!start) return '—';
+      var s = new Date(start);
+      var sStr = s.toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'});
+      if(!end) return sStr;
+      var e = new Date(end);
+      var sameDay = s.toDateString() === e.toDateString();
+      return sameDay ? sStr+' → '+e.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : sStr+' → '+e.toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'});
+    };
     var checkedIn = tickets.filter(function(t){return t.status==='used';}).length;
     var html='<div style="margin-bottom:14px"><a onclick="navTo(\'eventos\')" style="color:var(--text2);cursor:pointer;font-size:13px">← Voltar</a></div>'+
       '<div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:18px;flex-wrap:wrap;gap:10px">'+
         '<div><h2 style="font-size:22px;margin:0">'+esc(ev.title)+'</h2>'+
-        '<div style="color:var(--text2);font-size:13px;margin-top:4px">'+(ev.type==='online'?'🌐 Online':'📍 '+esc(ev.location?.venue||'Local'))+' &middot; '+fmt(ev.startAt)+'</div></div>'+
+        '<div style="color:var(--text2);font-size:13px;margin-top:4px">'+(ev.type==='online'?'🌐 Online':'📍 '+esc(ev.location?.venue||'Local'))+' &middot; '+esc(fmtPeriodo(ev.startAt, ev.endAt))+'</div></div>'+
         '<div style="display:flex;gap:6px;flex-wrap:wrap">'+
           (ev.status==='published' ? '<a href="/e/'+esc(ev.slug)+'" target="_blank" class="bok" style="text-decoration:none;background:#10b981;color:#fff">🔗 Ver landing</a>' : '<button class="bok" onclick="eventoPublicar()" style="background:var(--gold);color:#111">📢 Publicar</button>')+
           '<button class="bok" onclick="eventoCopiarLink(\''+esc(ev.slug)+'\')">📋 Link</button>'+
@@ -4759,6 +4800,8 @@ setTimeout(checkStatus,2000);
     document.body.appendChild(t);
     setTimeout(function(){ t.style.opacity="0"; t.style.transition="opacity .3s"; setTimeout(function(){ t.remove(); }, 400); }, 3500);
   }
+  // v4.34: expoe toast no window pra funcoes do escopo global (eventos, outbox, etc)
+  window.toast = toast;
 
   window.imperador = {
     contacts: function(){ return window.convs; },

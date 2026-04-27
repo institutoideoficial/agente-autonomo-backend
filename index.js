@@ -3137,8 +3137,19 @@ app.get("/e/:slug", (req, res) => {
   const ev = eventsLoad().find(e => e.slug === req.params.slug);
   if (!ev) return res.status(404).send("<h1>Evento nao encontrado</h1>");
   if (ev.status === "draft") return res.status(404).send("<h1>Evento nao publicado</h1>");
-  // Render landing simples
-  const dateStr = ev.startAt ? new Date(ev.startAt).toLocaleString("pt-BR", { dateStyle: "long", timeStyle: "short" }) : "";
+  // Render landing simples (suporta multi-dia)
+  function fmtPeriodoEvent(start, end) {
+    if (!start) return "";
+    const s = new Date(start);
+    const sStr = s.toLocaleString("pt-BR", { dateStyle: "long", timeStyle: "short" });
+    if (!end) return sStr;
+    const e = new Date(end);
+    const sameDay = s.toDateString() === e.toDateString();
+    return sameDay
+      ? sStr + " → " + e.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
+      : sStr + " → " + e.toLocaleString("pt-BR", { dateStyle: "long", timeStyle: "short" });
+  }
+  const dateStr = fmtPeriodoEvent(ev.startAt, ev.endAt);
   const locationStr = ev.type === "online" ? "🌐 Online" : `📍 ${ev.location?.venue || "Local a definir"}, ${ev.location?.city || ""}`;
   const ticketTypes = (ev.ticketTypes || []).filter(t => t.quantity == null || (t.sold || 0) < t.quantity);
   res.send(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(ev.title)} — ${esc(ev.organizer?.name || "Speakers Play")}</title>
@@ -3229,7 +3240,16 @@ app.get("/t/:id", (req, res) => {
   if (!tk) return res.status(404).send("<h1>Ingresso nao encontrado</h1>");
   const ev = eventsLoad().find(e => e.id === tk.eventId);
   if (!ev) return res.status(404).send("<h1>Evento nao encontrado</h1>");
-  const dateStr = ev.startAt ? new Date(ev.startAt).toLocaleString("pt-BR", { dateStyle: "long", timeStyle: "short" }) : "";
+  function fmtP(start, end) {
+    if (!start) return "";
+    const s = new Date(start);
+    const sStr = s.toLocaleString("pt-BR", { dateStyle: "long", timeStyle: "short" });
+    if (!end) return sStr;
+    const e = new Date(end);
+    const sameDay = s.toDateString() === e.toDateString();
+    return sameDay ? sStr + " → " + e.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : sStr + " → " + e.toLocaleString("pt-BR", { dateStyle: "long", timeStyle: "short" });
+  }
+  const dateStr = fmtP(ev.startAt, ev.endAt);
   const ticketType = (ev.ticketTypes || []).find(t => t.id === tk.ticketTypeId);
   // QR code via API publica do qrserver (sem dep externa)
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(tk.id)}`;
@@ -3312,7 +3332,17 @@ app.post("/api/public/events/:slug/order", async (req, res) => {
     } catch (e) {}
     // Manda confirmacao via WhatsApp se possivel
     try {
-      const msg = `🎟️ Inscricao confirmada!\n\n*${ev.title}*\n📅 ${new Date(ev.startAt).toLocaleString("pt-BR", { dateStyle: "long", timeStyle: "short" })}\n${ev.type === "online" ? "🌐 Online" : "📍 " + (ev.location?.venue || "Local a definir")}\n\nSeu ingresso (com QR pra check-in):\nhttps://crm.institutoideoficial.com.br/t/${tk.id}`;
+      const fmtP = (s, e) => {
+        if (!s) return "";
+        const sd = new Date(s);
+        const sStr = sd.toLocaleString("pt-BR", { dateStyle: "long", timeStyle: "short" });
+        if (!e) return sStr;
+        const ed = new Date(e);
+        return sd.toDateString() === ed.toDateString()
+          ? sStr + " → " + ed.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
+          : sStr + " → " + ed.toLocaleString("pt-BR", { dateStyle: "long", timeStyle: "short" });
+      };
+      const msg = `🎟️ Inscricao confirmada!\n\n*${ev.title}*\n📅 ${fmtP(ev.startAt, ev.endAt)}\n${ev.type === "online" ? "🌐 Online" : "📍 " + (ev.location?.venue || "Local a definir")}\n\nSeu ingresso (com QR pra check-in):\nhttps://crm.institutoideoficial.com.br/t/${tk.id}`;
       fetch(`http://127.0.0.1:${PORT}/api/send-message`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
