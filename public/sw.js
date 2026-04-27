@@ -1,5 +1,5 @@
-// Service Worker do Speakers CRM Imperador (v4.32)
-const CACHE = 'imperador-v32';
+// Service Worker do Speakers CRM Imperador (v4.32 + push real VAPID)
+const CACHE = 'imperador-v32-push';
 const SHELL = ['/app', '/welcome.html', '/manifest.json', '/icon-192.svg', '/icon-512.svg'];
 
 self.addEventListener('install', e => {

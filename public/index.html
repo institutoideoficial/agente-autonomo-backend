@@ -1080,10 +1080,16 @@ function renderNotifPage(main){
       (perm==='denied'?'<div style="margin-top:8px;font-size:11px;color:var(--text2)">Pra liberar: clique no cadeado da URL → Site settings → Notifications → Allow</div>':'')+
       (perm==='granted'?'<button class="bok" style="margin-top:10px" onclick="notifTeste()">🧪 Testar agora</button>':'')+
     '</div>'+
-    '<div style="background:var(--panel);border-radius:10px;padding:18px;margin-bottom:14px">'+
-      '<div style="font-size:13px;color:var(--text2);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Service Worker (PWA)</div>'+
-      '<div style="font-size:14px">'+swReg+'</div>'+
-      '<div style="font-size:11px;color:var(--text2);margin-top:6px">Em PWA instalado mobile, recebe push mesmo com app fechado.</div>'+
+    '<div style="background:var(--panel);border-radius:10px;padding:18px;margin-bottom:14px;border-left:3px solid '+(window._pushReal?'#10b981':'#f59e0b')+'">'+
+      '<div style="font-size:13px;color:var(--text2);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Push Real (PWA mobile, app fechado)</div>'+
+      '<div style="font-size:14px;font-weight:700;color:'+(window._pushReal?'#10b981':'#f59e0b')+'">'+(window._pushReal?'✅ Ativado neste device':'⚠️ Nao ativado')+'</div>'+
+      '<div style="font-size:11px;color:var(--text2);margin-top:6px">Recebe vendas/msgs no celular mesmo com PWA fechada. Funciona em iOS 16.4+ e Android 4.4+.</div>'+
+      '<div style="font-size:14px;margin-top:10px">'+swReg+'</div>'+
+      (window._pushReal
+        ? '<button class="bok" style="margin-top:10px" onclick="pushTeste()">🧪 Enviar push teste</button>'+
+          '<button class="bok" style="margin-top:10px;margin-left:6px;background:#444;color:#fff" onclick="pushDesativar()">⏸ Desativar push</button>'
+        : '<button class="bok" style="margin-top:10px;background:var(--gold);color:#111" onclick="pushAtivar()">🔔 Ativar push real</button>'
+      )+
     '</div>'+
     '<div style="background:var(--panel);border-radius:10px;padding:18px;margin-bottom:14px;border-left:3px solid '+(typeof _syncEnabled!=='undefined' && _syncEnabled?'#10b981':'#666')+'">'+
       '<div style="font-size:13px;color:var(--text2);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Sync entre dispositivos</div>'+
@@ -1120,6 +1126,77 @@ function notifTeste(){
     if(notifPrefGet('sound') && typeof playBeep==='function') playBeep();
   }catch(e){ alert('Erro: '+e.message); }
 }
+
+// v4.32: Web Push real (VAPID) - subscribe/unsubscribe via SW
+window._pushReal = false;
+function urlBase64ToUint8Array(b64){
+  var pad = '='.repeat((4 - b64.length % 4) % 4);
+  var base64 = (b64 + pad).replace(/-/g, '+').replace(/_/g, '/');
+  var raw = window.atob(base64);
+  var arr = new Uint8Array(raw.length);
+  for(var i=0;i<raw.length;i++) arr[i] = raw.charCodeAt(i);
+  return arr;
+}
+async function pushCheckSubscribed(){
+  try{
+    if(!('serviceWorker' in navigator) || !('PushManager' in window)) return false;
+    var reg = await navigator.serviceWorker.ready;
+    var sub = await reg.pushManager.getSubscription();
+    window._pushReal = !!sub;
+    return window._pushReal;
+  }catch(e){ return false; }
+}
+async function pushAtivar(){
+  try{
+    if(!('serviceWorker' in navigator)){ alert('Service Worker nao suportado'); return; }
+    if(!('PushManager' in window)){ alert('Push API nao suportada (use Chrome/Safari iOS 16.4+)'); return; }
+    var perm = await Notification.requestPermission();
+    if(perm !== 'granted'){ alert('Permissao negada. Libera no cadeado da URL.'); return; }
+    var keyResp = await fetch('/api/push/vapid-public-key');
+    if(!keyResp.ok){ alert('VAPID nao configurado no servidor'); return; }
+    var keyData = await keyResp.json();
+    var reg = await navigator.serviceWorker.ready;
+    var sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(keyData.publicKey)
+    });
+    var saveResp = await fetch('/api/push/subscribe', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ subscription: sub.toJSON(), label: navigator.userAgent.slice(0,80) })
+    });
+    var d = await saveResp.json();
+    if(!d.ok){ alert('Erro ao salvar: '+(d.error||'?')); return; }
+    window._pushReal = true;
+    toast('✓ Push real ativado neste device');
+    renderNotifPage(document.getElementById('main'));
+  }catch(e){ alert('Erro: '+e.message); console.error(e); }
+}
+async function pushDesativar(){
+  try{
+    var reg = await navigator.serviceWorker.ready;
+    var sub = await reg.pushManager.getSubscription();
+    if(sub){
+      await fetch('/api/push/unsubscribe', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ endpoint: sub.endpoint })
+      });
+      await sub.unsubscribe();
+    }
+    window._pushReal = false;
+    toast('Push desativado');
+    renderNotifPage(document.getElementById('main'));
+  }catch(e){ alert('Erro: '+e.message); }
+}
+async function pushTeste(){
+  try{
+    var r = await fetch('/api/push/test', { method:'POST', headers:{'Content-Type':'application/json'}, body: '{}' });
+    var d = await r.json();
+    if(d.ok) toast('✓ Push enviado pra '+d.sent+' device(s)');
+    else alert('Erro: '+(d.error||'?'));
+  }catch(e){ alert('Erro: '+e.message); }
+}
+// Auto-check ao carregar
+if('serviceWorker' in navigator) setTimeout(pushCheckSubscribed, 1500);
 function renderPlaceholder(main, sec){
   var p=PLACEHOLDERS[sec]; if(!p) return;
   main.innerHTML='<div class="ph-wrap">'+

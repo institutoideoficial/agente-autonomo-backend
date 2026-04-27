@@ -3,6 +3,7 @@ const express = require("express");
 const path = require("path");
 const Anthropic = require("@anthropic-ai/sdk");
 const platformUtils = require('./lib/platform-utils');
+const webPush = require("web-push");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -26,7 +27,7 @@ app.use(express.json({
 // Setar BASIC_AUTH_USER + BASIC_AUTH_PASS no .env. Excecoes: webhooks externos, healthcheck, SSE.
 const BASIC_AUTH_USER = process.env.BASIC_AUTH_USER || '';
 const BASIC_AUTH_PASS = process.env.BASIC_AUTH_PASS || '';
-const BASIC_AUTH_BYPASS = ['/health', '/healthz', '/api/webhook/', '/oauth/google/'];
+const BASIC_AUTH_BYPASS = ['/health', '/healthz', '/api/webhook/', '/oauth/google/', '/api/push/vapid-public-key'];
 if (BASIC_AUTH_USER && BASIC_AUTH_PASS) {
   app.use((req, res, next) => {
     if (BASIC_AUTH_BYPASS.some(p => req.url.startsWith(p))) return next();
@@ -57,10 +58,157 @@ const sseClients = new Set();
 function broadcastSSE(data) {
   const msg = `data: ${JSON.stringify(data)}\n\n`;
   sseClients.forEach(c => { try { c.write(msg); } catch (e) {} });
+  // v4.32: tambem dispara push notification pra eventos de venda/cart/msg
+  try { maybePushFromEvent(data); } catch (e) { console.error("[push hook]", e?.message); }
+}
+
+// Mapeia evento SSE -> push notification (so quando ha sub ativa)
+function maybePushFromEvent(evt) {
+  if (!evt || !evt.type) return;
+  // Imports tardios pra evitar TDZ (pushBroadcast e definido depois)
+  if (typeof pushBroadcast !== 'function') return;
+  const platIcon = { greenn:'🌱', eduzz:'📘', hotmart:'🔥', kiwify:'🥝' };
+  const fmtBR = (v) => 'R$ ' + Number(v||0).toFixed(2).replace('.', ',');
+  let title = '', body = '', tag = '', url = '/app';
+
+  if (['greenn_event','eduzz_event','hotmart_event','kiwify_event'].includes(evt.type)) {
+    const plat = evt.type.replace('_event', '');
+    const d = evt.data || {};
+    const status = String(d.status || '').toLowerCase();
+    const nome = d.name || d.email || 'Cliente';
+    const prod = d.productName || '';
+    tag = plat + '-' + (d.transactionId || Date.now());
+    if (['paid','approved','complete'].includes(status)) {
+      title = (platIcon[plat] || '🔔') + ' Venda aprovada — ' + fmtBR(d.total);
+      body = nome + (prod ? ' — ' + prod : '');
+    } else if (['abandoned','cart_abandoned','checkoutabandoned'].includes(status)) {
+      title = (platIcon[plat] || '🔔') + ' Carrinho abandonado';
+      body = nome + (prod ? ' — ' + prod : '');
+    } else if (['refused','declined','canceled'].includes(status)) {
+      title = (platIcon[plat] || '🔔') + ' Compra recusada';
+      body = nome + (prod ? ' — ' + prod : '');
+    } else { return; }
+  } else if (evt.type === 'message_in') {
+    const d = evt.data || {};
+    title = 'Nova mensagem — ' + (d.pushname || d.from_id || 'Contato');
+    body = (d.body || '(midia)').slice(0, 140);
+    tag = 'msg-' + (d.chat_id || Date.now());
+  } else { return; }
+
+  // Dispara em background, nao bloqueia SSE
+  pushBroadcast({ title, body, tag, url }).catch(e => console.error("[push broadcast]", e?.message));
 }
 
 // Health
 app.get("/health", (req, res) => res.json({ ok: true, service: "speakers-crm-backend" }));
+
+// ============================================================
+// v4.32: WEB PUSH NOTIFICATIONS (VAPID) - mobile/PWA real push
+// ============================================================
+const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY || "";
+const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || "";
+const VAPID_SUBJECT = process.env.VAPID_SUBJECT || "mailto:institutoideoficial@gmail.com";
+const PUSH_SUBS_FILE = process.env.PUSH_SUBS_FILE || path.join(__dirname, "data", "push-subscriptions.json");
+
+if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY) {
+  try {
+    webPush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
+    console.log("[push] VAPID configurado");
+  } catch (e) { console.error("[push] VAPID erro:", e?.message); }
+} else {
+  console.warn("[push] VAPID nao configurado (sem env VAPID_PUBLIC_KEY/PRIVATE_KEY)");
+}
+
+function pushSubsLoad() {
+  try { return JSON.parse(require('fs').readFileSync(PUSH_SUBS_FILE, 'utf8')); } catch { return []; }
+}
+function pushSubsSave(arr) {
+  try { require('fs').writeFileSync(PUSH_SUBS_FILE, JSON.stringify(arr || [], null, 2)); }
+  catch (e) { console.error("[push] save err", e?.message); }
+}
+
+// Envia push pra todas inscricoes. Remove inscricoes invalidas (410 Gone).
+async function pushBroadcast(payload) {
+  if (!VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY) return { sent: 0, removed: 0, skipped: "vapid nao configurado" };
+  const subs = pushSubsLoad();
+  if (subs.length === 0) return { sent: 0, removed: 0, skipped: "sem inscricoes" };
+  const body = JSON.stringify(payload);
+  let sent = 0, removed = 0;
+  const stillValid = [];
+  for (const s of subs) {
+    try {
+      await webPush.sendNotification(s.subscription, body);
+      sent++;
+      stillValid.push(s);
+    } catch (e) {
+      if (e.statusCode === 404 || e.statusCode === 410) {
+        removed++;
+        console.log("[push] removida inscricao expirada", s.subscription?.endpoint?.slice(0, 60));
+      } else {
+        stillValid.push(s);
+        console.error("[push] envio falhou", e?.statusCode, e?.message);
+      }
+    }
+  }
+  if (removed > 0) pushSubsSave(stillValid);
+  return { sent, removed, total: subs.length };
+}
+
+// Endpoint publico (sem auth) pra SW pegar a chave VAPID publica
+app.get("/api/push/vapid-public-key", (_req, res) => {
+  if (!VAPID_PUBLIC_KEY) return res.status(503).json({ ok: false, error: "VAPID nao configurado" });
+  res.json({ ok: true, publicKey: VAPID_PUBLIC_KEY });
+});
+
+// Inscreve um device pra receber push (precisa auth)
+app.post("/api/push/subscribe", (req, res) => {
+  try {
+    const sub = req.body && req.body.subscription;
+    if (!sub || !sub.endpoint) return res.status(400).json({ ok: false, error: "subscription invalida" });
+    const subs = pushSubsLoad();
+    // Evita duplicatas (mesma endpoint = mesmo device)
+    const idx = subs.findIndex(s => s.subscription?.endpoint === sub.endpoint);
+    const item = { subscription: sub, label: req.body.label || '', subscribedAt: Date.now() };
+    if (idx >= 0) subs[idx] = item; else subs.push(item);
+    pushSubsSave(subs);
+    res.json({ ok: true, total: subs.length, replaced: idx >= 0 });
+  } catch (e) { res.status(500).json({ ok: false, error: e?.message }); }
+});
+
+// Remove inscricao
+app.post("/api/push/unsubscribe", (req, res) => {
+  try {
+    const endpoint = req.body && req.body.endpoint;
+    if (!endpoint) return res.status(400).json({ ok: false, error: "endpoint obrigatorio" });
+    const subs = pushSubsLoad();
+    const filtered = subs.filter(s => s.subscription?.endpoint !== endpoint);
+    pushSubsSave(filtered);
+    res.json({ ok: true, removed: subs.length - filtered.length, total: filtered.length });
+  } catch (e) { res.status(500).json({ ok: false, error: e?.message }); }
+});
+
+// Status: quantas inscricoes ativas
+app.get("/api/push/status", (_req, res) => {
+  const subs = pushSubsLoad();
+  res.json({
+    ok: true,
+    configured: !!(VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY),
+    publicKey: VAPID_PUBLIC_KEY || null,
+    totalSubscriptions: subs.length,
+    devices: subs.map(s => ({ label: s.label || '', subscribedAt: s.subscribedAt, endpointHash: (s.subscription?.endpoint || '').slice(-30) }))
+  });
+});
+
+// Envia push de teste pra todas inscricoes
+app.post("/api/push/test", async (req, res) => {
+  const r = await pushBroadcast({
+    title: req.body?.title || "Imperador CRM - Teste",
+    body: req.body?.body || "Funcionou! Notificacoes push reais ativas. 🎉",
+    tag: "test-push",
+    url: "/app"
+  });
+  res.json({ ok: true, ...r });
+});
 
 // v4.32: /healthz - deep healthcheck pra UptimeRobot/monitor externo (bypass auth)
 // Retorna 200 OK se tudo crítico funciona, 503 se algo essencial caiu.
