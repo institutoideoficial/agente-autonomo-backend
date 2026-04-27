@@ -774,7 +774,10 @@ function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace
 
 function navTo(sec){
   document.querySelectorAll('.nav-btn').forEach(function(b){b.classList.remove('active');});
-  document.getElementById('nav-'+sec).classList.add('active');
+  // v4.34: rotas internas (evento-detalhe, etc) podem nao ter botao no nav. Mantem o ativo do parent (eventos)
+  var btn = document.getElementById('nav-'+sec);
+  if(btn) btn.classList.add('active');
+  else if(sec.startsWith('evento-')) document.getElementById('nav-eventos')?.classList.add('active');
   var sb=document.getElementById('sb');
   var rp=document.getElementById('right');
   var main=document.getElementById('main');
