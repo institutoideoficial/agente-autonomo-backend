@@ -1,19 +1,21 @@
 # Caddyfile - HTTPS automatico via Let's Encrypt
-# As variaveis {$DOMAIN_CRM}, {$DOMAIN_BRAVOS}, {$ACME_EMAIL} vem do docker-compose.
+# Variaveis: {$DOMAIN_CRM}, {$DOMAIN_SOFIA}, {$DOMAIN_BRAVOS}, {$ACME_EMAIL} vem do docker-compose.
+#
+# Caddy compartilhado entre stacks: CRM Imperador e Sofia Agent.
+# - {$DOMAIN_CRM} -> crm:3000 (Imperador)
+# - {$DOMAIN_SOFIA} -> sofia-agent:8000 (Sofia, stack separado em /opt/sofia-agent)
+#
+# Pra Caddy alcancar containers da Sofia (em outro stack), ele entra na
+# rede docker `imperador_edge` (external) — ver docker-compose deste arquivo
+# e o do /opt/sofia-agent/infra/.
 
 {
     email {$ACME_EMAIL}
 }
 
-# CRM (frontend + API + SSE)
+# CRM Imperador
 {$DOMAIN_CRM} {
     encode gzip
-
-    # OAuth do agente Sofia (separado do CRM): /agent-oauth/google/* -> agent:8000/oauth/google/*
-    handle_path /agent-oauth/* {
-        rewrite * /oauth{uri}
-        reverse_proxy agent:8000
-    }
 
     # SSE precisa manter conexao aberta; desabilita buffer do proxy
     @sse path /events
@@ -29,6 +31,17 @@
     handle {
         reverse_proxy crm:3000
     }
+
+    log {
+        output stdout
+        format console
+    }
+}
+
+# Sofia (agente autonomo) — stack separado, mesmo Caddy pra HTTPS
+{$DOMAIN_SOFIA} {
+    encode gzip
+    reverse_proxy sofia-agent:8000
 
     log {
         output stdout
