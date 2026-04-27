@@ -480,8 +480,10 @@ app.get("/wa-agent/qr", async (req, res) => {
 
 app.get("/wa-agent/status", async (req, res) => {
   try {
-    const r = await fetch(`${BRAVOS_AGENT_URL}/status`, { headers: { "Authorization": `Bearer ${BRAVOS_TOKEN}` } });
+    const r = await fetch(`${BRAVOS_AGENT_URL}/health`, { headers: { "Authorization": `Bearer ${BRAVOS_TOKEN}` } });
     const d = await r.json().catch(() => ({}));
+    // Compat com a UI generica: state='connected' quando ja autenticado e pronto
+    if (d.isReady && d.isAuthenticated) d.state = "connected";
     res.json(d);
   } catch (e) {
     res.status(503).json({ error: e?.message });
