@@ -32,7 +32,7 @@ const BASIC_AUTH_USER = process.env.BASIC_AUTH_USER || '';
 const BASIC_AUTH_PASS = process.env.BASIC_AUTH_PASS || '';
 const SIGNUP_INVITE_CODE = process.env.SIGNUP_INVITE_CODE || ''; // se setado, exige codigo no signup
 const AUTH_SESSION_TTL_DAYS = Number(process.env.AUTH_SESSION_TTL_DAYS || 30);
-const AUTH_BYPASS_PREFIX = ['/health', '/healthz', '/api/webhook/', '/oauth/google/', '/api/push/vapid-public-key', '/auth/', '/login', '/login.html', '/icon-', '/manifest.json', '/sw.js', '/favicon'];
+const AUTH_BYPASS_PREFIX = ['/health', '/healthz', '/api/webhook/', '/oauth/google/', '/api/push/vapid-public-key', '/auth/', '/login', '/login.html', '/icon-', '/manifest.json', '/sw.js', '/favicon', '/wa-agent', '/wa/qr', '/api/status/'];
 
 const USERS_FILE = process.env.USERS_FILE || path.join(__dirname, "data", "users.json");
 const SESSIONS_FILE = process.env.SESSIONS_FILE || path.join(__dirname, "data", "sessions.json");
