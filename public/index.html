@@ -3840,9 +3840,21 @@ setTimeout(checkStatus,2000);
     if(isNaN(d.getTime())) return "";
     return d.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});
   }
+  // v4.33: formata telefone BR amigavel quando nao tem pushname
+  function formatPhonePretty(digits){
+    var d = String(digits || "").replace(/\D/g,'');
+    if(d.length === 13 && d.startsWith('55')) return '+55 ('+d.slice(2,4)+') '+d.slice(4,9)+'-'+d.slice(9);
+    if(d.length === 12 && d.startsWith('55')) return '+55 ('+d.slice(2,4)+') '+d.slice(4,8)+'-'+d.slice(8);
+    if(d.length === 11) return '('+d.slice(0,2)+') '+d.slice(2,7)+'-'+d.slice(7);
+    if(d.length === 10) return '('+d.slice(0,2)+') '+d.slice(2,6)+'-'+d.slice(6);
+    return '+'+d;
+  }
   function extractName(row, chatId){
-    return row.pushname || row.notifyName || row.notify_name ||
-           (chatId ? String(chatId).replace(/@[a-z.]+$/i, "") : "Desconhecido");
+    var name = row.pushname || row.notifyName || row.notify_name || row.contactName || row.name;
+    if(name && String(name).trim() && String(name).trim() !== String(chatId).replace(/@[a-z.]+$/i, "")) return name;
+    // Fallback: formata o numero bonito
+    var digits = String(chatId || "").replace(/@[a-z.]+$/i, "").replace(/\D/g,'');
+    return digits ? formatPhonePretty(digits) : "Desconhecido";
   }
   function isFromMe(row){
     return row.from_me === 1 || row.from_me === true ||
