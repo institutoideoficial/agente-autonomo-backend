@@ -1715,9 +1715,9 @@ function showEmpty(){
 
 async function loadHomeDashboard(){
   try{
-    var r = await fetch('/api/insights/health');
-    if(!r.ok) return;
-    var d = await r.json();
+    var [r1, r2] = await Promise.all([fetch('/api/insights/health'), fetch('/api/insights/unified')]);
+    var h = await r1.json();
+    var u = r2.ok ? await r2.json() : null;
     var grid = document.getElementById('home-grid');
     if(!grid) return;
     var fmt = function(n){ return new Intl.NumberFormat('pt-BR').format(n||0); };
@@ -1725,28 +1725,43 @@ async function loadHomeDashboard(){
     var card = function(label, val, hint, color){
       return '<div style="background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:18px"><div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text2);margin-bottom:6px;font-weight:600">'+esc(label)+'</div><div style="font-size:28px;font-weight:800;color:'+(color||'var(--gold)')+';line-height:1;margin-bottom:4px">'+val+'</div><div style="font-size:11px;color:var(--text2)">'+esc(hint||'')+'</div></div>';
     };
-    var bravosClr = d.bravos && d.bravos.ok ? '#10b981' : '#ef4444';
-    var bravosTxt = d.bravos && d.bravos.ok ? 'Conectado' : 'Offline';
-    var totalEvents = d.events && d.events.total || 0;
-    var html =
-      card('WhatsApp', '<span style="color:'+bravosClr+'">●</span> '+bravosTxt, d.bravos && d.bravos.uptimeSec ? 'uptime '+Math.round(d.bravos.uptimeSec/60)+' min' : '', bravosClr) +
-      card('Eventos recebidos', fmt(totalEvents), 'todas plataformas') +
-      card('Agendamentos', fmt(d.scheduled?.pending||0)+' pendentes', fmt(d.scheduled?.sent||0)+' enviados / '+fmt(d.scheduled?.failed||0)+' falhas') +
-      card('CRM uptime', Math.round((d.crm?.uptimeSec||0)/60)+' min', d.crm?.version || '');
-    if(d.events){
-      var byPlat = ['greenn','eduzz','hotmart','kiwify','generic','waCloud'].map(p =>
-        '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #1f1f1f"><span style="color:var(--text2);font-size:12px">'+p+'</span><span style="font-weight:700">'+fmt(d.events[p]||0)+'</span></div>'
-      ).join('');
-      html += '<div style="grid-column:1/-1;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:18px"><div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text2);margin-bottom:10px;font-weight:600">Eventos por plataforma</div>'+byPlat+'</div>';
+    var bravosClr = h.bravos && h.bravos.ok ? '#10b981' : '#ef4444';
+    var bravosTxt = h.bravos && h.bravos.ok ? 'Conectado' : 'Offline';
+    var html = '';
+    // RECEITA UNIFICADA - top section
+    if(u){
+      html += '<div style="grid-column:1/-1"><div style="font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:var(--text2);margin-bottom:10px;font-weight:700">💰 Receita unificada (todas plataformas)</div></div>';
+      html += card('Hoje', fmtBR(u.summary.hoje.total), u.summary.hoje.count + ' venda(s)', '#10b981');
+      html += card('Últimos 7 dias', fmtBR(u.summary.ultimos7.total), u.summary.ultimos7.count + ' vendas', '#10b981');
+      html += card('Últimos 30 dias', fmtBR(u.summary.ultimos30.total), u.summary.ultimos30.count + ' vendas', '#10b981');
+      html += card('Eventos manager', u.events.totalTickets + ' inscritos', u.events.checkedIn + ' check-ins / ' + u.events.published + ' eventos pub.', 'var(--gold)');
+      // Por plataforma 30d
+      var platBars = u.platforms.map(function(p){
+        var pct = u.summary.ultimos30.total ? Math.round(p.receita30/u.summary.ultimos30.total*100) : 0;
+        return '<div style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px"><span>'+p.icon+' '+p.id+' <span style="color:var(--text2);font-size:11px">('+p.count30+')</span></span><span style="font-weight:700;color:'+p.color+'">'+fmtBR(p.receita30)+'</span></div><div style="background:var(--panel2);height:6px;border-radius:3px;overflow:hidden"><div style="width:'+pct+'%;height:100%;background:'+p.color+'"></div></div></div>';
+      }).join('');
+      html += '<div style="grid-column:1/-1;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:18px"><div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text2);margin-bottom:12px;font-weight:600">Receita 30d por plataforma</div>'+platBars+'</div>';
+      // Series 7d - mini bar chart
+      var maxRec = Math.max.apply(null, u.days7.map(function(d){return d.receita;}).concat([1]));
+      var bars = u.days7.map(function(d){
+        var pct = Math.round(d.receita/maxRec*100);
+        return '<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px"><div style="font-size:10px;color:var(--text2);font-weight:600">'+(d.receita?fmtBR(d.receita).replace('R$ ','').slice(0,6):'')+'</div><div style="width:100%;background:var(--panel2);height:60px;border-radius:4px;display:flex;align-items:flex-end;overflow:hidden"><div style="width:100%;background:linear-gradient(180deg,var(--gold) 0%,#a08538 100%);height:'+Math.max(pct,2)+'%"></div></div><div style="font-size:9px;color:var(--text2);text-transform:uppercase">'+esc(d.label)+'</div></div>';
+      }).join('');
+      html += '<div style="grid-column:1/-1;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:18px"><div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text2);margin-bottom:14px;font-weight:600">Receita últimos 7 dias</div><div style="display:flex;gap:6px;align-items:flex-end">'+bars+'</div></div>';
     }
-    if(d.ai && !d.ai.configured){
-      html += '<div style="grid-column:1/-1;background:#3a2e0a;border:1px solid var(--gold);border-radius:8px;padding:11px;color:var(--gold);font-size:12px">⚠️ IA nao configurada — adicionar ANTHROPIC_API_KEY no .env</div>';
+    // SISTEMA - bottom section
+    html += '<div style="grid-column:1/-1;margin-top:8px"><div style="font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:var(--text2);margin-bottom:10px;font-weight:700">⚙ Sistema</div></div>';
+    html += card('WhatsApp', '<span style="color:'+bravosClr+'">●</span> '+bravosTxt, h.bravos && h.bravos.uptimeSec ? 'uptime '+Math.round(h.bravos.uptimeSec/60)+' min' : '', bravosClr);
+    html += card('Agendamentos', fmt(h.scheduled?.pending||0)+' pendentes', fmt(h.scheduled?.sent||0)+' enviados / '+fmt(h.scheduled?.failed||0)+' falhas');
+    html += card('CRM uptime', Math.round((h.crm?.uptimeSec||0)/60)+' min', h.crm?.version || '');
+    if(h.ai && !h.ai.configured){
+      html += '<div style="grid-column:1/-1;background:#3a2e0a;border:1px solid var(--gold);border-radius:8px;padding:11px;color:var(--gold);font-size:12px">⚠️ IA nao configurada</div>';
     }
-    if(d.google && !d.google.connected){
-      html += '<div style="grid-column:1/-1;background:#1a2840;border:1px solid #3b82f6;border-radius:8px;padding:11px;color:#3b82f6;font-size:12px">📅 Google '+ (d.google.configured ? 'configurado, faltando autorizar' : 'nao configurado') +' — Integracoes → Google</div>';
+    if(h.google && !h.google.connected){
+      html += '<div style="grid-column:1/-1;background:#1a2840;border:1px solid #3b82f6;border-radius:8px;padding:11px;color:#3b82f6;font-size:12px">📅 Google '+ (h.google.configured ? 'configurado, faltando autorizar' : 'nao configurado') +'</div>';
     }
     grid.innerHTML = html;
-  }catch(e){}
+  }catch(e){ console.warn('[dashboard]', e); }
   // v4.32: DNS propagation banner
   try{
     var dr = await fetch('/api/dns-status');
@@ -4765,17 +4780,30 @@ setTimeout(checkStatus,2000);
   // v4.11: Theme toggle (dark / light)
   var IMP_THEME_KEY = "imp_theme_v1";
   function applyTheme(t){
-    document.body.classList.toggle('theme-light', t==='light');
+    if(t === 'auto'){
+      var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      document.body.classList.toggle('theme-light', !prefersDark);
+    } else {
+      document.body.classList.toggle('theme-light', t==='light');
+    }
   }
   function loadTheme(){
-    try{ return localStorage.getItem(IMP_THEME_KEY) || 'dark'; }catch(e){ return 'dark'; }
+    try{ return localStorage.getItem(IMP_THEME_KEY) || 'auto'; }catch(e){ return 'auto'; }
   }
+  // v4.34: cycle auto -> light -> dark -> auto
   window.toggleTheme = function(){
-    var cur = loadTheme()==='light' ? 'dark' : 'light';
-    try{ localStorage.setItem(IMP_THEME_KEY, cur); }catch(e){}
-    applyTheme(cur);
-    if(typeof toast==='function') toast('Tema '+(cur==='light'?'claro':'escuro'));
+    var cur = loadTheme();
+    var next = cur === 'auto' ? 'light' : cur === 'light' ? 'dark' : 'auto';
+    try{ localStorage.setItem(IMP_THEME_KEY, next); }catch(e){}
+    applyTheme(next);
+    if(typeof toast==='function') toast('Tema: ' + (next==='auto'?'auto (sistema)':next==='light'?'claro':'escuro'));
   };
+  // Reage a mudanca do sistema quando em modo auto
+  if(window.matchMedia){
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function(){
+      if(loadTheme() === 'auto') applyTheme('auto');
+    });
+  }
 
   // v4.33: Logout + nome do usuario logado
   window.doLogout = async function(){

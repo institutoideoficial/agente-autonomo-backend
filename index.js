@@ -6,6 +6,7 @@ const platformUtils = require('./lib/platform-utils');
 const webPush = require("web-push");
 const bcrypt = require("bcryptjs");
 const cookieParser = require("cookie-parser");
+const rateLimit = require("express-rate-limit");
 
 const app = express();
 app.use(cookieParser());
@@ -14,6 +15,40 @@ const PORT = process.env.PORT || 3000;
 // Config Bravos WhatsApp API
 const BRAVOS_URL = process.env.BRAVOS_URL || "https://bravos-whatsapp-api-production.up.railway.app";
 const BRAVOS_TOKEN = process.env.BRAVOS_TOKEN || "sp_a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2";
+
+// v4.34: Rate limit nos webhooks publicos (anti-DoS / spam)
+// Estrategia: 60 req/min por IP nas rotas /api/webhook/*
+// Bypass automatico se header X-Webhook-Token bate com algum dos secrets (legitimo, alta freq ok)
+const webhookRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { ok: false, error: "rate limit excedido (60 req/min)" },
+  // skip se vem com auth correta (Greenn/Hotmart/Kiwify token, ou Eduzz HMAC valido)
+  skip: (req) => {
+    const tok = req.headers["x-webhook-token"] || req.headers["x-hotmart-hottok"] || req.query.signature || req.query.hottok || "";
+    if (!tok) return false;
+    const validTokens = [
+      process.env.GREENN_TOKEN,
+      process.env.HOTMART_HOTTOK,
+      process.env.KIWIFY_TOKEN
+    ].filter(Boolean);
+    return validTokens.some(v => v === tok);
+  }
+});
+app.use("/api/webhook/", webhookRateLimit);
+
+// Rate limit pra signup/login (anti-bruteforce): 10 tentativas/15min por IP
+const authRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: { ok: false, error: "muitas tentativas - tenta de novo em 15min" },
+  standardHeaders: true,
+  legacyHeaders: false
+});
+app.use("/auth/login", authRateLimit);
+app.use("/auth/signup", authRateLimit);
 
 // v4.32: capturar rawBody pra HMAC verification em webhooks (somente quando aplicavel)
 app.use(express.json({
@@ -1394,6 +1429,25 @@ app.get("/api/dns-status", (_req, res) => {
   }
 });
 
+// v4.34: registra lead via Sofia/agent (cria/atualiza tags + nota)
+app.post("/api/contacts/:phone/lead", (req, res) => {
+  const phone = String(req.params.phone || '').replace(/\D/g, '');
+  if (!phone) return res.status(400).json({ ok: false, error: "phone invalido" });
+  const tags = Array.isArray(req.body?.tags) ? req.body.tags : (req.body?.tags ? [req.body.tags] : ["lead"]);
+  const note = String(req.body?.note || "").slice(0, 500);
+  const map = contactTagsLoad();
+  if (!map[phone]) map[phone] = [];
+  tags.forEach(t => {
+    const clean = String(t).toLowerCase().replace(/[^a-z0-9\u00c0-\u017f\- ]/g, '').trim().slice(0, 30);
+    if (clean && !map[phone].includes(clean)) map[phone].push(clean);
+  });
+  contactTagsSave(map);
+  // log no audit (reusa estrutura existente do scheduled? ou simples log)
+  console.log(`[lead] ${phone} tags=[${map[phone].join(',')}] note="${note}"`);
+  broadcastSSE({ type: "lead_registered", data: { phone, tags: map[phone], note } });
+  res.json({ ok: true, phone, tags: map[phone], note });
+});
+
 app.get("/api/contacts/tags/all", (_req, res) => {
   const map = contactTagsLoad();
   const counts = {};
@@ -1532,6 +1586,178 @@ app.get("/api/auto-archive/candidates", (req, res) => {
 // INSIGHTS / HEALTH / EXPORT (v4.29)
 // ============================================================
 const SERVER_BOOT_AT = Date.now();
+
+// v4.34: Dashboard unificado - agrega receita+inscritos de TODAS as fontes
+app.get("/api/insights/unified", async (_req, res) => {
+  try {
+    const tryLoad = f => { try { return JSON.parse(fs.readFileSync(f, "utf8")); } catch { return []; } };
+    const platforms = [
+      { id: "greenn", file: GREENN_FILE, color: "#10b981", icon: "🌱" },
+      { id: "eduzz", file: EDUZZ_FILE, color: "#3b82f6", icon: "📘" },
+      { id: "hotmart", file: HOTMART_FILE, color: "#ef5f1e", icon: "🔥" },
+      { id: "kiwify", file: KIWIFY_FILE, color: "#a3e635", icon: "🥝" }
+    ];
+    const now = Date.now();
+    const day = 24 * 60 * 60 * 1000;
+    const startOfDay = d => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x.getTime(); };
+    const today = startOfDay(now);
+    const week = now - 7 * day;
+    const month = now - 30 * day;
+    const paidStatuses = new Set(["paid", "approved", "complete"]);
+    const summary = { hoje: { total: 0, count: 0 }, ultimos7: { total: 0, count: 0 }, ultimos30: { total: 0, count: 0 } };
+    const byPlat = [];
+    platforms.forEach(p => {
+      const evs = tryLoad(p.file);
+      const paidEvs = evs.filter(e => paidStatuses.has(String(e.status || "").toLowerCase()));
+      const inWindow = (cutoff) => paidEvs.filter(e => (e.receivedAt || 0) >= cutoff);
+      const sum = arr => arr.reduce((s, e) => s + (Number(e.total) || 0), 0);
+      const t7 = inWindow(week), t30 = inWindow(month), tt = inWindow(today);
+      const platTotal = sum(t30);
+      byPlat.push({
+        id: p.id, color: p.color, icon: p.icon,
+        eventsTotal: evs.length, paidTotal: paidEvs.length,
+        receitaHoje: Math.round(sum(tt) * 100) / 100,
+        receita7: Math.round(sum(t7) * 100) / 100,
+        receita30: Math.round(platTotal * 100) / 100,
+        countHoje: tt.length, count7: t7.length, count30: t30.length
+      });
+      summary.hoje.total += sum(tt); summary.hoje.count += tt.length;
+      summary.ultimos7.total += sum(t7); summary.ultimos7.count += t7.length;
+      summary.ultimos30.total += sum(t30); summary.ultimos30.count += t30.length;
+    });
+    Object.values(summary).forEach(s => { s.total = Math.round(s.total * 100) / 100; });
+
+    // Eventos manager (nao-monetizado se preço=0)
+    const events = tryLoad(EVENTS_FILE);
+    const tickets = tryLoad(TICKETS_FILE);
+    const eventsAgg = {
+      totalEvents: events.length,
+      published: events.filter(e => e.status === "published").length,
+      totalTickets: tickets.length,
+      checkedIn: tickets.filter(t => t.status === "used").length,
+      receita30: Math.round(tickets.filter(t => t.createdAt >= month).reduce((s, t) => s + (Number(t.price) || 0), 0) * 100) / 100,
+      ticketsHoje: tickets.filter(t => t.createdAt >= today).length
+    };
+
+    // Serie 7 dias (vendas paid + inscritos)
+    const days7 = [];
+    for (let i = 6; i >= 0; i--) {
+      const dStart = startOfDay(now - i * day);
+      const dEnd = dStart + day;
+      let receita = 0, vendas = 0, inscritos = 0;
+      platforms.forEach(p => {
+        tryLoad(p.file).forEach(e => {
+          if (e.receivedAt >= dStart && e.receivedAt < dEnd && paidStatuses.has(String(e.status || "").toLowerCase())) {
+            receita += Number(e.total) || 0;
+            vendas++;
+          }
+        });
+      });
+      tickets.forEach(t => { if (t.createdAt >= dStart && t.createdAt < dEnd) inscritos++; });
+      days7.push({
+        date: new Date(dStart).toISOString().slice(0, 10),
+        label: new Date(dStart).toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit" }),
+        receita: Math.round(receita * 100) / 100,
+        vendas, inscritos
+      });
+    }
+
+    res.json({ ok: true, summary, platforms: byPlat, events: eventsAgg, days7, generatedAt: now });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e?.message });
+  }
+});
+
+// v4.34: Resumo diario formatado pra WhatsApp (Sofia ou direto)
+function dailySummaryText() {
+  const tryLoad = f => { try { return JSON.parse(fs.readFileSync(f, "utf8")); } catch { return []; } };
+  const now = Date.now();
+  const day = 24 * 60 * 60 * 1000;
+  const startOfDay = d => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x.getTime(); };
+  const yesterday = startOfDay(now - day);
+  const yesterdayEnd = startOfDay(now);
+  const today = startOfDay(now);
+  const tomorrow = today + day;
+  const paidStatuses = new Set(["paid", "approved", "complete"]);
+  const fmtBRL = n => "R$ " + (Number(n) || 0).toFixed(2).replace(".", ",");
+
+  const platforms = [
+    { id: "Greenn", file: GREENN_FILE, icon: "🌱" },
+    { id: "Eduzz", file: EDUZZ_FILE, icon: "📘" },
+    { id: "Hotmart", file: HOTMART_FILE, icon: "🔥" },
+    { id: "Kiwify", file: KIWIFY_FILE, icon: "🥝" }
+  ];
+  let totalReceita = 0, totalVendas = 0, totalAbandonadas = 0;
+  const platLines = [];
+  platforms.forEach(p => {
+    const evs = tryLoad(p.file).filter(e => (e.receivedAt || 0) >= yesterday && (e.receivedAt || 0) < yesterdayEnd);
+    const paid = evs.filter(e => paidStatuses.has(String(e.status || "").toLowerCase()));
+    const aband = evs.filter(e => ["abandoned", "checkoutabandoned"].includes(String(e.status || "").toLowerCase()));
+    const receita = paid.reduce((s, e) => s + (Number(e.total) || 0), 0);
+    if (paid.length || aband.length) {
+      platLines.push(`${p.icon} ${p.id}: ${paid.length} venda${paid.length === 1 ? '' : 's'} ${fmtBRL(receita)}${aband.length ? ` (${aband.length} abandonado${aband.length === 1 ? '' : 's'})` : ''}`);
+    }
+    totalReceita += receita;
+    totalVendas += paid.length;
+    totalAbandonadas += aband.length;
+  });
+
+  const eventosManager = tryLoad(EVENTS_FILE);
+  const tickets = tryLoad(TICKETS_FILE);
+  const inscritosOntem = tickets.filter(t => t.createdAt >= yesterday && t.createdAt < yesterdayEnd).length;
+  const eventosProximos = eventosManager.filter(e => e.status === "published" && e.startAt && e.startAt >= today && e.startAt < tomorrow + 7 * day).slice(0, 3);
+
+  const sched = (typeof schedLoad === "function" ? schedLoad() : []).filter(s => s.status === "pending");
+  const dataIso = new Date(yesterday).toLocaleDateString("pt-BR");
+  const partes = [`☀️ *Bom dia!* Resumo de ontem (${dataIso})`, ""];
+
+  if (totalVendas > 0) {
+    partes.push(`💰 *Receita: ${fmtBRL(totalReceita)}* (${totalVendas} venda${totalVendas === 1 ? '' : 's'})`);
+    platLines.forEach(l => partes.push(`  • ${l}`));
+  } else if (totalAbandonadas > 0) {
+    partes.push(`💰 Sem vendas. ${totalAbandonadas} carrinho${totalAbandonadas === 1 ? '' : 's'} abandonado${totalAbandonadas === 1 ? '' : 's'} 😬`);
+  } else {
+    partes.push(`💰 Sem movimento ontem.`);
+  }
+  partes.push("");
+
+  if (inscritosOntem > 0) {
+    partes.push(`🎟️ ${inscritosOntem} inscrição${inscritosOntem === 1 ? '' : 'ões'} novas em eventos`);
+  }
+  if (eventosProximos.length > 0) {
+    partes.push(`📅 *Próximos 7 dias:*`);
+    eventosProximos.forEach(e => {
+      const d = new Date(e.startAt).toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" });
+      partes.push(`  • ${d} — ${e.title}`);
+    });
+  }
+  partes.push("");
+
+  if (sched.length > 0) {
+    partes.push(`📤 ${sched.length} mensagem${sched.length === 1 ? '' : 's'} agendada${sched.length === 1 ? '' : 's'} pra hoje`);
+  }
+  partes.push(`👀 Veja tudo: https://crm.institutoideoficial.com.br/app`);
+
+  return partes.join("\n");
+}
+
+app.get("/api/insights/daily-summary", (_req, res) => {
+  res.json({ ok: true, text: dailySummaryText() });
+});
+
+app.post("/api/insights/daily-summary/send", async (req, res) => {
+  try {
+    const phone = req.body?.phone || process.env.DAILY_SUMMARY_PHONE || "5512982933600";
+    const text = dailySummaryText();
+    const r = await fetch(`http://127.0.0.1:${PORT}/api/send-message`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": req.headers.authorization || "" },
+      body: JSON.stringify({ phone, message: text })
+    });
+    const d = await r.json();
+    res.json({ ok: r.ok, sent: d, text });
+  } catch (e) { res.status(500).json({ ok: false, error: e?.message }); }
+});
 
 app.get("/api/insights/health", async (req, res) => {
   try {
@@ -3110,6 +3336,88 @@ async function schedTick() {
 setInterval(schedTick, 30 * 1000); // 30s
 // Roda 1 vez ao subir (catch-up)
 setTimeout(schedTick, 5 * 1000);
+
+// v4.34: Auto-followup pre-evento (24h antes) - dispara lembrete WhatsApp
+const EVENT_REMINDERS_FILE = path.join(__dirname, "data", "event-reminders-sent.json");
+function eventRemindersLoad() { try { return JSON.parse(fs.readFileSync(EVENT_REMINDERS_FILE, "utf8")); } catch { return {}; } }
+function eventRemindersSave(map) { try { fs.writeFileSync(EVENT_REMINDERS_FILE, JSON.stringify(map, null, 2)); } catch (e) {} }
+
+async function eventReminderTick() {
+  try {
+    const events = eventsLoad().filter(e => e.status === "published" && e.startAt);
+    if (events.length === 0) return;
+    const tickets = ticketsLoad();
+    const sent = eventRemindersLoad();
+    const now = Date.now();
+    const win24h = 24 * 60 * 60 * 1000;
+    const tolerance = 60 * 60 * 1000; // janela de 1h pra disparo
+    for (const ev of events) {
+      const timeUntil = ev.startAt - now;
+      // Dispara entre 24h-1h e 24h+1h antes do evento
+      if (timeUntil < win24h - tolerance || timeUntil > win24h + tolerance) continue;
+      const evTickets = tickets.filter(t => t.eventId === ev.id && t.status === "valid");
+      const fmtP = (s, e) => {
+        if (!s) return ""; const sd = new Date(s);
+        const sStr = sd.toLocaleString("pt-BR", { dateStyle: "long", timeStyle: "short" });
+        if (!e) return sStr;
+        const ed = new Date(e);
+        return sd.toDateString() === ed.toDateString()
+          ? sStr + " → " + ed.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
+          : sStr + " → " + ed.toLocaleString("pt-BR", { dateStyle: "long", timeStyle: "short" });
+      };
+      for (const tk of evTickets) {
+        const key = `${ev.id}_${tk.id}_24h`;
+        if (sent[key]) continue;
+        if (!tk.attendeePhone) continue;
+        const local = ev.type === "online" ? "🌐 Online" : `📍 ${ev.location?.venue || "Local a definir"}`;
+        const msg = `🔔 Lembrete: amanhã!\n\n*${ev.title}*\n📅 ${fmtP(ev.startAt, ev.endAt)}\n${local}\n\nSeu ingresso: https://crm.institutoideoficial.com.br/t/${tk.id}\n\nTá nos vendo? Qualquer duvida me chama. 💛`;
+        try {
+          const r = await fetch(`http://127.0.0.1:${PORT}/api/send-message`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ phone: tk.attendeePhone, message: msg })
+          });
+          const d = await r.json().catch(() => ({}));
+          if (d.ok) {
+            sent[key] = { sentAt: now, eventId: ev.id, ticketId: tk.id };
+            console.log(`[event-reminder] enviado pra ${tk.attendeeName} (${tk.attendeePhone}) - ${ev.title}`);
+          }
+        } catch (e) { console.error("[event-reminder]", e?.message); }
+      }
+    }
+    eventRemindersSave(sent);
+  } catch (e) { console.error("[event-reminder-tick]", e?.message); }
+}
+setInterval(eventReminderTick, 30 * 60 * 1000); // 30 min
+setTimeout(eventReminderTick, 60 * 1000); // primeira vez 1min apos boot
+
+// v4.34: Cron resumo diario WhatsApp (manda 7h da manha hora SP)
+async function dailySummaryTick() {
+  try {
+    if (!process.env.DAILY_SUMMARY_PHONE && !process.env.DAILY_SUMMARY_AUTO) return;
+    const now = new Date();
+    const sp = new Date(now.toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
+    const hour = sp.getHours();
+    const minute = sp.getMinutes();
+    if (hour !== 7 || minute >= 30) return; // dispara entre 07:00 e 07:29 SP
+    const flag = path.join(__dirname, "data", "last-daily-summary.txt");
+    const today = sp.toISOString().slice(0, 10);
+    try {
+      const last = fs.readFileSync(flag, "utf8").trim();
+      if (last === today) return; // ja mandou hoje
+    } catch {}
+    const phone = process.env.DAILY_SUMMARY_PHONE || "5512982933600";
+    const msg = dailySummaryText();
+    await fetch(`http://127.0.0.1:${PORT}/api/send-message`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone, message: msg })
+    });
+    fs.writeFileSync(flag, today);
+    console.log("[daily-summary] enviado pra " + phone);
+  } catch (e) { console.error("[daily-summary]", e?.message); }
+}
+setInterval(dailySummaryTick, 5 * 60 * 1000); // checa a cada 5min
 
 // ============================================================
 // v4.34: GERENCIADOR DE EVENTOS (Sympla-like MVP)
