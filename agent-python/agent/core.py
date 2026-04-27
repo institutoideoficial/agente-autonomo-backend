@@ -13,7 +13,7 @@ from typing import Any
 
 from anthropic import AsyncAnthropic
 
-from . import memory
+from . import bravos_client, memory
 from .tools import TOOL_SCHEMAS, execute_tool
 
 log = logging.getLogger("agent.core")
@@ -230,6 +230,7 @@ async def handle_inbound(phone: str, message: str, contact_name: str | None = No
     steps = 0
     final_text_parts: list[str] = []
     last_response: Any = None
+    sent_via_tool = False  # rastreia se enviou via tool send_whatsapp_message
 
     while steps < MAX_LOOP_STEPS:
         steps += 1
@@ -258,6 +259,8 @@ async def handle_inbound(phone: str, message: str, contact_name: str | None = No
         for block in resp.content:
             if getattr(block, "type", None) != "tool_use":
                 continue
+            if block.name == "send_whatsapp_message":
+                sent_via_tool = True
             result_str = await execute_tool(block.name, block.input or {}, contact_phone=digits)
             tool_results.append({
                 "type": "tool_result",
@@ -267,10 +270,24 @@ async def handle_inbound(phone: str, message: str, contact_name: str | None = No
         history.append({"role": "user", "content": tool_results})
         memory.append_message(conv_id, "user", tool_results)
 
+    # Fallback: se modelo terminou com texto livre mas nao chamou send_whatsapp_message,
+    # entrega o texto pro contato via Bravos pra evitar mensagem perdida.
+    fallback_sent = False
+    if not sent_via_tool and final_text_parts:
+        text = "\n".join(final_text_parts).strip()
+        if text:
+            log.warning("fallback_send: modelo nao chamou send_whatsapp_message, entregando texto livre (%d chars)", len(text))
+            res = await bravos_client.send_message(digits, text)
+            ok = res.get("_status") == 200
+            memory.audit("fallback_send_whatsapp", digits, {"text": text[:300]}, res, ok)
+            fallback_sent = ok
+
     return {
         "ok": True,
         "steps": steps,
         "stop_reason": getattr(last_response, "stop_reason", None),
         "trailing_text": "\n".join(final_text_parts),
+        "sent_via_tool": sent_via_tool,
+        "fallback_sent": fallback_sent,
         "conversation_id": conv_id,
     }
