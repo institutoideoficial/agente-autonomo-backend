@@ -50,6 +50,8 @@ services:
       GOOGLE_AUTO_EVENT_DURATION_MIN: ${GOOGLE_AUTO_EVENT_DURATION_MIN:-30}
     volumes:
       - crm_data:/app/data
+      # v4.32: backup folder readonly pra /api/backup/drive/upload acessar
+      - /opt/backups:/opt/backups:ro
     expose:
       - "3000"
     depends_on:

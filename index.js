@@ -1253,7 +1253,9 @@ const GOOGLE_SCOPES = [
   "https://www.googleapis.com/auth/calendar.events",
   "https://www.googleapis.com/auth/calendar.readonly",
   "https://www.googleapis.com/auth/userinfo.email",
-  "https://www.googleapis.com/auth/userinfo.profile"
+  "https://www.googleapis.com/auth/userinfo.profile",
+  // v4.32: drive.file = acesso APENAS aos arquivos criados por essa app (escopo restrito, seguro)
+  "https://www.googleapis.com/auth/drive.file"
 ].join(" ");
 
 function googleLoadTokens() { try { return JSON.parse(require("fs").readFileSync(GOOGLE_TOKENS_FILE, "utf8")); } catch { return null; } }
@@ -1506,6 +1508,118 @@ app.delete("/api/integrations/google/events/:id", async (req, res) => {
   } catch (e) {
     res.status(500).json({ ok: false, error: e?.message });
   }
+});
+
+// ============================================================
+// v4.32: BACKUP PRO GOOGLE DRIVE (drive.file scope)
+// ============================================================
+const BACKUP_DRIVE_FOLDER_NAME = process.env.BACKUP_DRIVE_FOLDER_NAME || "Imperador CRM Backups";
+const BACKUP_DRIVE_RETENTION = Number(process.env.BACKUP_DRIVE_RETENTION || 30); // mantem 30 backups mais recentes
+const BACKUP_FOLDER_ID_FILE = path.join(__dirname, "data", "drive-backup-folder-id.txt");
+
+async function driveFindOrCreateFolder() {
+  // Cache do folderId em arquivo (evita query toda vez)
+  try {
+    const cached = require("fs").readFileSync(BACKUP_FOLDER_ID_FILE, "utf8").trim();
+    if (cached) return cached;
+  } catch {}
+  // Procura folder existente
+  const q = `name='${BACKUP_DRIVE_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+  const r1 = await googleApiFetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name)`);
+  const d1 = await r1.json();
+  if (d1.files && d1.files.length > 0) {
+    require("fs").writeFileSync(BACKUP_FOLDER_ID_FILE, d1.files[0].id);
+    return d1.files[0].id;
+  }
+  // Cria folder
+  const r2 = await googleApiFetch("https://www.googleapis.com/drive/v3/files", {
+    method: "POST",
+    body: JSON.stringify({ name: BACKUP_DRIVE_FOLDER_NAME, mimeType: "application/vnd.google-apps.folder" })
+  });
+  const d2 = await r2.json();
+  if (!r2.ok) throw new Error("create folder: " + (d2.error?.message || r2.status));
+  require("fs").writeFileSync(BACKUP_FOLDER_ID_FILE, d2.id);
+  return d2.id;
+}
+
+async function driveUploadFile(localPath, remoteName, parentFolderId) {
+  const fsLib = require("fs");
+  const stat = fsLib.statSync(localPath);
+  const fileBuf = fsLib.readFileSync(localPath);
+  // Multipart upload: metadata + content
+  const boundary = "imp_boundary_" + Date.now();
+  const metadata = JSON.stringify({ name: remoteName, parents: [parentFolderId] });
+  const body = Buffer.concat([
+    Buffer.from(`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n--${boundary}\r\nContent-Type: application/octet-stream\r\n\r\n`),
+    fileBuf,
+    Buffer.from(`\r\n--${boundary}--`)
+  ]);
+  const r = await googleApiFetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart", {
+    method: "POST",
+    headers: { "Content-Type": `multipart/related; boundary=${boundary}` },
+    body
+  });
+  const d = await r.json();
+  if (!r.ok) throw new Error("upload: " + (d.error?.message || r.status));
+  return { id: d.id, name: d.name, size: stat.size };
+}
+
+async function driveDeleteOldBackups(folderId, keepN) {
+  const r = await googleApiFetch(`https://www.googleapis.com/drive/v3/files?q='${folderId}'+in+parents+and+trashed=false&orderBy=createdTime+desc&fields=files(id,name,createdTime)&pageSize=200`);
+  const d = await r.json();
+  const files = d.files || [];
+  const toDelete = files.slice(keepN);
+  const deleted = [];
+  for (const f of toDelete) {
+    try {
+      await googleApiFetch(`https://www.googleapis.com/drive/v3/files/${f.id}`, { method: "DELETE" });
+      deleted.push(f.name);
+    } catch (e) { console.error("[backup-drive] delete fail", f.name, e?.message); }
+  }
+  return { kept: files.length - deleted.length, deleted };
+}
+
+// POST /api/backup/drive/upload - sobe ultimos backups locais pro Drive
+// Body opcional: { sourceDir: "/opt/backups", pattern: "tar.gz" } - default le do volume mount
+app.post("/api/backup/drive/upload", async (req, res) => {
+  try {
+    if (!googleConfigured()) return res.status(503).json({ ok: false, error: "Google nao configurado" });
+    if (!googleLoadTokens()?.access_token) return res.status(503).json({ ok: false, error: "Google nao conectado - va em Integracoes -> Google -> Conectar" });
+    const fsLib = require("fs");
+    const sourceDir = req.body?.sourceDir || process.env.BACKUP_SOURCE_DIR || "/opt/backups";
+    if (!fsLib.existsSync(sourceDir)) return res.status(404).json({ ok: false, error: `sourceDir ${sourceDir} nao existe (precisa volume mount)` });
+    const files = fsLib.readdirSync(sourceDir).filter(f => f.endsWith(".tar.gz"));
+    if (files.length === 0) return res.json({ ok: true, uploaded: [], message: "nenhum .tar.gz encontrado" });
+    // Pega os arquivos do dia mais recente (data dentro do nome YYYYMMDD-HHMM)
+    files.sort();
+    const latestDate = files[files.length - 1].match(/(\d{8}-\d{4})/)?.[1];
+    const todayFiles = latestDate ? files.filter(f => f.includes(latestDate)) : files.slice(-4);
+    const folderId = await driveFindOrCreateFolder();
+    const uploaded = [];
+    for (const f of todayFiles) {
+      try {
+        const r = await driveUploadFile(path.join(sourceDir, f), f, folderId);
+        uploaded.push(r);
+        console.log(`[backup-drive] uploaded ${f} (${r.size} bytes) id=${r.id}`);
+      } catch (e) { console.error(`[backup-drive] fail ${f}:`, e?.message); }
+    }
+    const cleanup = await driveDeleteOldBackups(folderId, BACKUP_DRIVE_RETENTION);
+    res.json({ ok: true, folderId, uploaded, cleanup });
+  } catch (e) {
+    console.error("[backup-drive]", e?.message);
+    res.status(500).json({ ok: false, error: e?.message });
+  }
+});
+
+// GET /api/backup/drive/status - lista backups no Drive
+app.get("/api/backup/drive/status", async (_req, res) => {
+  try {
+    if (!googleLoadTokens()?.access_token) return res.json({ ok: true, connected: false, hint: "Conectar Google em Integracoes" });
+    const folderId = await driveFindOrCreateFolder();
+    const r = await googleApiFetch(`https://www.googleapis.com/drive/v3/files?q='${folderId}'+in+parents+and+trashed=false&orderBy=createdTime+desc&fields=files(id,name,size,createdTime)&pageSize=50`);
+    const d = await r.json();
+    res.json({ ok: true, connected: true, folderId, folderName: BACKUP_DRIVE_FOLDER_NAME, retention: BACKUP_DRIVE_RETENTION, total: (d.files||[]).length, files: (d.files||[]).map(f => ({ name: f.name, size: Number(f.size||0), createdAt: f.createdTime })) });
+  } catch (e) { res.status(500).json({ ok: false, error: e?.message }); }
 });
 
 // ============================================================
