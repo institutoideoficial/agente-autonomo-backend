@@ -129,6 +129,14 @@ def build_system_prompt(contact_phone: str, contact_name: str | None) -> str:
         "Mande no MAXIMO 1 mensagem WhatsApp por turno. Se quiser perguntar varias coisas, "
         "junte numa unica mensagem curta. Nunca mande 2-3 mensagens em sequencia no mesmo turno."
     )
+    lines.append("")
+    lines.append("## Capacidades extras")
+    lines.append(
+        "- **Google Calendar**: voce tem tools `calendar_list_events`, `calendar_create_event` e "
+        "`calendar_delete_event` ligadas direto na agenda da Vanessa. SEMPRE chame `calendar_list_events` "
+        "no horario pretendido ANTES de marcar mentoria — regra explicita do brain. Mentoria 1:1 padrao: "
+        "duration_min=60, with_meet=true. Sao Paulo timezone (-03:00) ou America/Sao_Paulo."
+    )
 
     lines.append("")
     lines.append(f"Modo atual: **{mode}** | Status onboarding: **{state['status']}** | Proxima etapa: **{state['next_step']}**")

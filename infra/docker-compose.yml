@@ -101,6 +101,8 @@ services:
       AGENT_DB_PATH: /app/data/agent.db
       AGENT_LOG_LEVEL: ${AGENT_LOG_LEVEL:-INFO}
       CRM_URL: ${CRM_URL:-http://crm:3000}
+      CRM_BASIC_USER: ${BASIC_AUTH_USER:-}
+      CRM_BASIC_PASS: ${BASIC_AUTH_PASS:-}
       BRAVOS_URL: ${AGENT_BRAVOS_URL:-http://bravos-agent:3001}
       BRAVOS_TOKEN: ${API_TOKEN}
     volumes:

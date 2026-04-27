@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from . import bravos_client, memory
+from . import bravos_client, calendar_client, memory
 
 TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
@@ -99,6 +99,53 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "calendar_list_events",
+        "description": (
+            "Lista eventos do Google Calendar da Vanessa entre datas. Use SEMPRE antes de "
+            "marcar mentoria pra checar se ja tem algo no horario. Datas em ISO 8601 "
+            "(ex: '2026-04-28T14:00:00-03:00'). Sem from/to, retorna proximos 30 dias."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "from_iso": {"type": "string", "description": "Inicio em ISO 8601. Default: agora."},
+                "to_iso": {"type": "string", "description": "Fim em ISO 8601. Default: 30 dias a frente."},
+                "limit": {"type": "integer", "default": 20, "minimum": 1, "maximum": 100},
+            },
+        },
+    },
+    {
+        "name": "calendar_create_event",
+        "description": (
+            "Cria evento na agenda da Vanessa. Antes de criar mentoria SEMPRE chame calendar_list_events "
+            "no horario pra evitar conflito. Mentoria 1:1 padrao: duration_min=60, with_meet=true. "
+            "Passe phone (so digitos) pra vincular o evento ao contato."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "summary": {"type": "string", "description": "Titulo do evento."},
+                "start": {"type": "string", "description": "Inicio em ISO 8601 com timezone (-03:00)."},
+                "end": {"type": "string", "description": "Fim em ISO 8601 (opcional)."},
+                "duration_min": {"type": "integer", "default": 60},
+                "description": {"type": "string"},
+                "with_meet": {"type": "boolean", "default": False, "description": "Gera link Google Meet."},
+                "attendee_emails": {"type": "array", "items": {"type": "string"}},
+                "phone": {"type": "string", "description": "Telefone do contato (so digitos)."},
+            },
+            "required": ["summary", "start"],
+        },
+    },
+    {
+        "name": "calendar_delete_event",
+        "description": "Deleta evento da agenda. Use o id retornado por calendar_list_events.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"event_id": {"type": "string"}},
+            "required": ["event_id"],
+        },
+    },
+    {
         "name": "set_mode",
         "description": (
             "Troca entre 'treino' (so whitelist) e 'producao' (todos os contatos). "
@@ -166,6 +213,26 @@ async def _dispatch(name: str, args: dict[str, Any]) -> Any:
     if name == "forget":
         deleted = memory.brain_delete(args["category"], args["key"])
         return {"deleted": deleted}
+
+    if name == "calendar_list_events":
+        return await calendar_client.list_events(
+            args.get("from_iso"), args.get("to_iso"), args.get("limit", 20)
+        )
+
+    if name == "calendar_create_event":
+        return await calendar_client.create_event(
+            summary=args["summary"],
+            start=args["start"],
+            end=args.get("end"),
+            duration_min=args.get("duration_min", 60),
+            description=args.get("description"),
+            with_meet=args.get("with_meet", False),
+            attendee_emails=args.get("attendee_emails"),
+            phone=args.get("phone"),
+        )
+
+    if name == "calendar_delete_event":
+        return await calendar_client.delete_event(args["event_id"])
 
     if name == "set_mode":
         memory.brain_set("config", "mode", args["mode"])
