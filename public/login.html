@@ -62,6 +62,11 @@
         <label for="li-pass">Senha</label>
         <input type="password" id="li-pass" placeholder="••••••••" autocomplete="current-password" required>
       </div>
+      <div class="field" id="totp-wrap" style="display:none">
+        <label for="li-totp">Código 2FA (6 dígitos)</label>
+        <input type="text" id="li-totp" placeholder="000000" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code">
+        <div class="hint">App Authenticator (Google/Authy/1Password). Código muda a cada 30s.</div>
+      </div>
       <button type="submit" class="submit" id="li-btn">Entrar</button>
     </form>
 
@@ -113,15 +118,31 @@ async function doLogin(e){
   btn.disabled = true; btn.textContent = 'Entrando...';
   showMsg('', false);
   try{
+    var totpEl = document.getElementById('li-totp');
+    var body = {
+      email: document.getElementById('li-email').value,
+      password: document.getElementById('li-pass').value
+    };
+    if(totpEl && totpEl.value) body.totp = totpEl.value.replace(/\D/g,'');
     var r = await fetch('/auth/login', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({
-        email: document.getElementById('li-email').value,
-        password: document.getElementById('li-pass').value
-      })
+      body: JSON.stringify(body)
     });
     var d = await r.json();
-    if(!d.ok){ showMsg(d.error || 'Erro ao entrar', true); btn.disabled=false; btn.textContent='Entrar'; return; }
+    if(!d.ok){
+      // v4.34: precisa 2FA
+      if(d.requires2FA){
+        var wrap = document.getElementById('totp-wrap');
+        if(wrap){
+          wrap.style.display = 'block';
+          showMsg(d.error || 'Conta com 2FA - digite o codigo do app', false);
+          var inp = document.getElementById('li-totp'); if(inp){ inp.required = true; inp.focus(); }
+          btn.disabled=false; btn.textContent='Entrar';
+          return;
+        }
+      }
+      showMsg(d.error || 'Erro ao entrar', true); btn.disabled=false; btn.textContent='Entrar'; return;
+    }
     showMsg('✓ Bem-vinda, ' + d.user.name + '! Redirecionando...');
     setTimeout(function(){ location.href = nextUrl; }, 400);
   }catch(err){

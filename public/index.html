@@ -4308,15 +4308,83 @@ async function renderReports(main){
   main.innerHTML = html;
 }
 
-function renderConfig(main){
-  main.style.cssText='padding:18px;overflow-y:auto;flex:1;display:block;max-width:560px';
-  main.innerHTML='<h2 style="margin-bottom:16px;font-size:18px">⚙ Configuracoes</h2>'+
+async function renderConfig(main){
+  main.style.cssText='padding:18px;overflow-y:auto;flex:1;display:block;max-width:680px';
+  main.innerHTML='<h2 style="margin-bottom:16px;font-size:20px">⚙ Configurações</h2><div id="config-2fa">⏳</div>'+
     '<div style="background:var(--panel);border-radius:10px;padding:14px;margin-bottom:11px"><div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:11px">Bot IA</div>'+
     '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)"><span style="font-size:13px">Resposta automatica</span><div style="width:34px;height:19px;background:var(--gold);border-radius:10px;cursor:pointer;position:relative"><div style="position:absolute;width:15px;height:15px;background:#fff;border-radius:50%;top:2px;left:17px;transition:left .2s"></div></div></div>'+
     '</div>'+
     '<div style="background:var(--panel);border-radius:10px;padding:14px;margin-bottom:11px"><div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:11px">Agentes</div>'+
     Object.entries(AGENTES).map(function(e){return '<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)"><span style="font-size:13px">'+e[1]+'</span><span style="color:var(--gold);font-size:12px">Ativo</span></div>';}).join('')+
     '<button class="bok" style="margin-top:9px;width:100%">+ Adicionar Agente</button></div>';
+  // Render seção 2FA
+  await render2FASection();
+}
+
+async function render2FASection(){
+  var box = document.getElementById('config-2fa');
+  if(!box) return;
+  try{
+    var r = await fetch('/auth/2fa/status');
+    var s = await r.json();
+    var clr = s.enabled ? '#10b981' : '#f59e0b';
+    var html = '<div style="background:var(--panel);border-radius:10px;padding:18px;margin-bottom:14px;border-left:3px solid '+clr+'">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">'+
+        '<div><div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:1px">🔐 Autenticação de 2 fatores (2FA)</div>'+
+        '<div style="font-size:18px;font-weight:700;color:'+clr+';margin-top:4px">'+(s.enabled?'✅ Ativo':'⚠️ Desativado')+'</div></div>'+
+      '</div>'+
+      '<div style="font-size:12px;color:var(--text2);margin-bottom:12px">Adiciona codigo de 6 digitos do app autenticador (Google Authenticator, Authy, 1Password, Microsoft Authenticator) toda vez que logar.</div>'+
+      (s.enabled
+        ? '<button class="bok" style="background:#ef4444;color:#fff" onclick="dois_disable()">🔓 Desativar 2FA</button>'
+        : '<button class="bok" style="background:#10b981;color:#fff" onclick="dois_setup()">🔐 Ativar 2FA</button>'
+      )+
+      '<div id="2fa-flow"></div>'+
+    '</div>';
+    box.innerHTML = html;
+  }catch(e){ box.innerHTML = '<div style="color:#ef4444">Erro: '+e.message+'</div>'; }
+}
+
+async function dois_setup(){
+  var fl = document.getElementById('2fa-flow');
+  fl.innerHTML = '<div style="margin-top:14px;color:var(--text2)">⏳ gerando QR...</div>';
+  try{
+    var r = await fetch('/auth/2fa/setup', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
+    var d = await r.json();
+    if(!d.ok){ fl.innerHTML = '<div style="color:#ef4444;margin-top:14px">'+esc(d.error)+'</div>'; return; }
+    fl.innerHTML = '<div style="margin-top:14px;background:var(--panel2);padding:18px;border-radius:8px;text-align:center">'+
+      '<div style="font-size:13px;margin-bottom:12px">📱 Escaneia esse QR no seu app autenticador:</div>'+
+      '<img src="'+esc(d.qrUrl)+'" alt="QR" style="background:#fff;padding:10px;border-radius:8px;max-width:240px">'+
+      '<div style="font-size:11px;color:var(--text2);margin:8px 0;font-family:monospace;word-break:break-all">Secret manual: <code style="color:var(--gold)">'+esc(d.secret)+'</code></div>'+
+      '<div style="margin-top:14px"><label style="font-size:12px;color:var(--text2)">Cole o código de 6 dígitos pra confirmar:</label></div>'+
+      '<input id="2fa-token" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="000000" style="background:var(--panel);border:1px solid var(--border);color:var(--text);padding:10px;border-radius:6px;font-size:18px;text-align:center;letter-spacing:8px;margin-top:8px;width:160px;font-family:monospace">'+
+      '<div style="margin-top:14px;display:flex;gap:8px;justify-content:center">'+
+      '<button class="bok" style="background:var(--gold);color:#111" onclick="dois_enable()">✅ Confirmar e ativar</button>'+
+      '<button class="bok" style="background:#444;color:#fff" onclick="document.getElementById(\'2fa-flow\').innerHTML=\'\'">Cancelar</button>'+
+      '</div></div>';
+    setTimeout(function(){ var i = document.getElementById('2fa-token'); if(i) i.focus(); }, 100);
+  }catch(e){ fl.innerHTML = '<div style="color:#ef4444;margin-top:14px">'+e.message+'</div>'; }
+}
+
+async function dois_enable(){
+  var token = (document.getElementById('2fa-token')||{}).value;
+  if(!token || token.length !== 6) { alert('Codigo precisa ter 6 digitos'); return; }
+  try{
+    var r = await fetch('/auth/2fa/enable', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({token})});
+    var d = await r.json();
+    if(d.ok){ toast('✅ 2FA ativado!'); render2FASection(); document.getElementById('2fa-flow').innerHTML=''; }
+    else alert('Erro: '+(d.error||'?'));
+  }catch(e){ alert('Erro: '+e.message); }
+}
+
+async function dois_disable(){
+  var pwd = prompt('Digite sua senha pra desativar 2FA:');
+  if(!pwd) return;
+  try{
+    var r = await fetch('/auth/2fa/disable', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({password:pwd})});
+    var d = await r.json();
+    if(d.ok){ toast('🔓 2FA desativado'); render2FASection(); }
+    else alert('Erro: '+(d.error||'?'));
+  }catch(e){ alert('Erro: '+e.message); }
 }
 
 renderSB();

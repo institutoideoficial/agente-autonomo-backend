@@ -7,6 +7,7 @@ const webPush = require("web-push");
 const bcrypt = require("bcryptjs");
 const cookieParser = require("cookie-parser");
 const rateLimit = require("express-rate-limit");
+const { authenticator } = require("otplib");
 
 const app = express();
 app.use(cookieParser());
@@ -188,7 +189,7 @@ app.post('/auth/signup', async (req, res) => {
 
 app.post('/auth/login', async (req, res) => {
   try {
-    const { email, password } = req.body || {};
+    const { email, password, totp } = req.body || {};
     if (!email || !password) return res.status(400).json({ ok: false, error: 'email e senha obrigatorios' });
     const emailLow = String(email).toLowerCase().trim();
     const users = usersLoad();
@@ -196,6 +197,12 @@ app.post('/auth/login', async (req, res) => {
     if (!user) return res.status(401).json({ ok: false, error: 'email ou senha invalidos' });
     const ok = await bcrypt.compare(password, user.passwordHash);
     if (!ok) return res.status(401).json({ ok: false, error: 'email ou senha invalidos' });
+    // v4.34: 2FA TOTP - se ativo, exige token
+    if (user.totpEnabled && user.totpSecret) {
+      if (!totp) return res.status(401).json({ ok: false, requires2FA: true, error: 'codigo 2FA obrigatorio' });
+      const valid = authenticator.verify({ token: String(totp).replace(/\D/g, ''), secret: user.totpSecret });
+      if (!valid) return res.status(401).json({ ok: false, requires2FA: true, error: 'codigo 2FA invalido ou expirado' });
+    }
     user.lastLoginAt = Date.now();
     usersSave(users);
     const sess = sessionCreate(user.id);
@@ -203,8 +210,85 @@ app.post('/auth/login', async (req, res) => {
       httpOnly: true, secure: req.secure || req.headers['x-forwarded-proto'] === 'https',
       sameSite: 'lax', maxAge: AUTH_SESSION_TTL_DAYS * 24 * 60 * 60 * 1000
     });
-    res.json({ ok: true, user: { id: user.id, email: user.email, name: user.name, role: user.role } });
+    res.json({ ok: true, user: { id: user.id, email: user.email, name: user.name, role: user.role, has2FA: !!user.totpEnabled } });
   } catch (e) { res.status(500).json({ ok: false, error: e?.message }); }
+});
+
+// v4.34: 2FA TOTP setup/enable/disable
+app.post('/auth/2fa/setup', (req, res) => {
+  try {
+    const auth = authResolveUser(req);
+    if (!auth) return res.status(401).json({ ok: false, error: 'auth required' });
+    const users = usersLoad();
+    const user = users.find(u => u.id === auth.user.id);
+    if (!user) return res.status(404).json({ ok: false, error: 'user nao encontrado' });
+    if (user.totpEnabled) return res.status(400).json({ ok: false, error: '2FA ja ativo. Desative primeiro.' });
+    // Gera secret novo (mas NAO salva ainda - so depois do enable)
+    const secret = authenticator.generateSecret();
+    user._pendingTotpSecret = secret;
+    usersSave(users);
+    const issuer = 'Imperador CRM';
+    const accountName = user.email;
+    const otpauthUrl = authenticator.keyuri(accountName, issuer, secret);
+    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(otpauthUrl)}`;
+    res.json({ ok: true, secret, otpauthUrl, qrUrl, instructions: 'Escaneia o QR no Google Authenticator/Authy/1Password. Depois manda o codigo de 6 digitos pra /auth/2fa/enable.' });
+  } catch (e) { res.status(500).json({ ok: false, error: e?.message }); }
+});
+
+app.post('/auth/2fa/enable', (req, res) => {
+  try {
+    const auth = authResolveUser(req);
+    if (!auth) return res.status(401).json({ ok: false, error: 'auth required' });
+    const { token } = req.body || {};
+    if (!token) return res.status(400).json({ ok: false, error: 'token obrigatorio' });
+    const users = usersLoad();
+    const user = users.find(u => u.id === auth.user.id);
+    if (!user) return res.status(404).json({ ok: false, error: 'user nao encontrado' });
+    if (user.totpEnabled) return res.status(400).json({ ok: false, error: '2FA ja ativo' });
+    if (!user._pendingTotpSecret) return res.status(400).json({ ok: false, error: 'rode /auth/2fa/setup primeiro' });
+    const valid = authenticator.verify({ token: String(token).replace(/\D/g, ''), secret: user._pendingTotpSecret });
+    if (!valid) return res.status(400).json({ ok: false, error: 'codigo invalido ou expirado' });
+    user.totpSecret = user._pendingTotpSecret;
+    user.totpEnabled = true;
+    user.totpEnabledAt = Date.now();
+    delete user._pendingTotpSecret;
+    usersSave(users);
+    res.json({ ok: true, message: '2FA ativado. A partir do proximo login vai pedir o codigo.' });
+  } catch (e) { res.status(500).json({ ok: false, error: e?.message }); }
+});
+
+app.post('/auth/2fa/disable', async (req, res) => {
+  try {
+    const auth = authResolveUser(req);
+    if (!auth) return res.status(401).json({ ok: false, error: 'auth required' });
+    const { password } = req.body || {};
+    if (!password) return res.status(400).json({ ok: false, error: 'senha obrigatoria pra desativar 2FA' });
+    const users = usersLoad();
+    const user = users.find(u => u.id === auth.user.id);
+    if (!user) return res.status(404).json({ ok: false, error: 'user nao encontrado' });
+    const ok = await bcrypt.compare(password, user.passwordHash);
+    if (!ok) return res.status(401).json({ ok: false, error: 'senha invalida' });
+    delete user.totpSecret;
+    delete user.totpEnabled;
+    delete user.totpEnabledAt;
+    delete user._pendingTotpSecret;
+    usersSave(users);
+    res.json({ ok: true, message: '2FA desativado' });
+  } catch (e) { res.status(500).json({ ok: false, error: e?.message }); }
+});
+
+app.get('/auth/2fa/status', (req, res) => {
+  const auth = authResolveUser(req);
+  if (!auth) return res.status(401).json({ ok: false });
+  const users = usersLoad();
+  const user = users.find(u => u.id === auth.user.id);
+  if (!user) return res.status(404).json({ ok: false });
+  res.json({
+    ok: true,
+    enabled: !!user.totpEnabled,
+    enabledAt: user.totpEnabledAt || null,
+    pendingSetup: !!user._pendingTotpSecret
+  });
 });
 
 app.post('/auth/logout', (req, res) => {
@@ -217,7 +301,10 @@ app.post('/auth/logout', (req, res) => {
 app.get('/auth/me', (req, res) => {
   const auth = authResolveUser(req);
   if (!auth) return res.status(401).json({ ok: false });
-  res.json({ ok: true, user: { id: auth.user.id, email: auth.user.email, name: auth.user.name, role: auth.user.role }, via: auth.via });
+  // Carrega dados frescos pra pegar has2FA
+  const users = usersLoad();
+  const fresh = users.find(u => u.id === auth.user.id) || auth.user;
+  res.json({ ok: true, user: { id: fresh.id, email: fresh.email, name: fresh.name, role: fresh.role, has2FA: !!fresh.totpEnabled }, via: auth.via });
 });
 
 app.get('/auth/users-count', (_req, res) => {
