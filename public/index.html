@@ -3354,8 +3354,11 @@ function renderChat(id){
   var stl={open:'Aberta',pending:'Pendente',resolved:'Resolvida',bot:'Bot'};
   var main=document.getElementById('main');
   main.style.overflow='hidden';
+  // v4.34: detecta @lid (numero >14 digitos = formato interno de grupo, nao mensageavel)
+  var isLid = c.ph && String(c.ph).replace(/\D/g,'').length > 14;
+  var lidWarn = isLid ? '<div style="background:#3a2e0a;border-left:3px solid #f59e0b;padding:10px 14px;font-size:12px;color:#f59e0b">⚠️ Esse contato é um <strong>identificador interno de grupo (@lid)</strong>, não um número WhatsApp. Mensagens diretas não são permitidas — só interaja via grupo original ou peça o número direto.</div>' : '';
   main.innerHTML='<div class="ch-hd"><div class="ch-av" style="background:'+col+'">'+a+'</div>'+
-    '<div class="ch-inf"><div id="ch-nm">'+esc(c.nm)+'</div><div id="ch-sb">'+c.dept+' &bull; '+(stl[c.st]||c.st)+' &bull; '+(AGENTES[c.ag]||c.ag)+'</div></div>'+
+    '<div class="ch-inf"><div id="ch-nm">'+esc(c.nm)+(isLid?' <span style="font-size:10px;background:#3a2e0a;color:#f59e0b;padding:2px 6px;border-radius:8px;font-weight:700;margin-left:6px">LID</span>':'')+'</div><div id="ch-sb">'+c.dept+' &bull; '+(stl[c.st]||c.st)+' &bull; '+(AGENTES[c.ag]||c.ag)+'</div></div>'+
     '<div style="display:flex;gap:2px;align-items:center">'+
     '<button class="ic" onclick="favoritarConv()" id="hd-fav" title="Favoritar / Fixar no topo"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M14 4v5l-7 7v3h3l7-7h5V4h-8z" stroke="currentColor" stroke-width="2" fill="none"/><path d="M16 9V4h-2v5h2z"/></svg></button>'+
     '<button class="ic" onclick="silenciarConv()" id="hd-mute" title="Silenciar notificacoes"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg></button>'+
@@ -3365,6 +3368,7 @@ function renderChat(id){
     '<button class="ic" onclick="toggleBot()" id="hd-bot" title="Bot IA"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M20 9V7c0-2.21-1.79-4-4-4h-3c0-1.1-.9-2-2-2s-2 .9-2 2H6C3.79 3 2 4.79 2 7v2c-1.1 0-2 .9-2 2v3c0 1.1.9 2 2 2v4c0 2.21 1.79 4 4 4h12c2.21 0 4-1.79 4-4v-4c1.1 0 2-.9 2-2v-3c0-1.1-.9-2-2-2zM7.5 11.5c.83 0 1.5.67 1.5 1.5s-.67 1.5-1.5 1.5S6 13.83 6 13s.67-1.5 1.5-1.5zm9 0c.83 0 1.5.67 1.5 1.5s-.67 1.5-1.5 1.5-1.5-.67-1.5-1.5.67-1.5 1.5-1.5zM8 18v-2h8v2H8z"/></svg></button>'+
     '<button class="ic" onclick="encerrarChat()" title="Sair da conversa"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></button>'+
     '</div></div>'+
+    lidWarn+
     '<div id="msgs"></div>'+
     '<div class="ch-ft"><div class="ft-acts">'+
     '<button class="fab" onclick="sugerirIA()" id="btn-ia" title="Sugerir resposta com IA (Claude)">✨ IA</button>'+
@@ -3372,8 +3376,8 @@ function renderChat(id){
     '<button class="fab" onclick="notaRapida()">📝 Nota</button>'+
     '<button class="fab">📎 Arquivo</button>'+
     '</div>'+
-    '<div class="ft-row"><textarea id="minp" placeholder="Digite uma mensagem..." rows="1"></textarea>'+
-    '<button id="sbtn" onclick="enviar()">➤</button>'+
+    '<div class="ft-row"><textarea id="minp" '+(isLid?'disabled placeholder="LID nao permite envio direto"':'placeholder="Digite uma mensagem..."')+' rows="1"></textarea>'+
+    '<button id="sbtn" onclick="enviar()" '+(isLid?'disabled style="opacity:.4;cursor:not-allowed"':'')+'>➤</button>'+
     '</div></div>';
   var mi=document.getElementById('minp');
   mi.addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();enviar();}});

@@ -706,6 +706,18 @@ app.post("/api/send-message", async (req, res) => {
     if (!phone || !message) return res.status(400).json({ error: "phone e message sao obrigatorios" });
     const clean = String(phone).replace(/\D/g, "");
 
+    // v4.34: detecta @lid (formato interno de grupo do WhatsApp - >13 digitos)
+    // WhatsApp NAO permite mensagem direta pra LID, so via grupo original
+    if (clean.length > 14) {
+      return res.status(400).json({
+        ok: false,
+        source: "validation",
+        error: "Esse contato eh um identificador interno de grupo (@lid), nao um numero WhatsApp real. Mensagens diretas pra LIDs nao sao permitidas pelo WhatsApp. Acessa via grupo original ou pede o numero direto pro contato.",
+        isLid: true,
+        clean
+      });
+    }
+
     // v4.23: se Cloud API configurada, usa ela. Senao, Bravos (whatsapp-web.js).
     if (process.env.WA_CLOUD_TOKEN && process.env.WA_CLOUD_PHONE_ID) {
       try {
