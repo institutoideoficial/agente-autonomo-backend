@@ -10,6 +10,8 @@ const rateLimit = require("express-rate-limit");
 const otplib = require("otplib");
 
 const app = express();
+// v4.34: trust proxy 1 (Caddy) - express-rate-limit precisa pra ler X-Forwarded-For confiavel
+app.set('trust proxy', 1);
 app.use(cookieParser());
 const PORT = process.env.PORT || 3000;
 
@@ -706,17 +708,9 @@ app.post("/api/send-message", async (req, res) => {
     if (!phone || !message) return res.status(400).json({ error: "phone e message sao obrigatorios" });
     const clean = String(phone).replace(/\D/g, "");
 
-    // v4.34: detecta @lid (formato interno de grupo do WhatsApp - >13 digitos)
-    // WhatsApp NAO permite mensagem direta pra LID, so via grupo original
-    if (clean.length > 14) {
-      return res.status(400).json({
-        ok: false,
-        source: "validation",
-        error: "Esse contato eh um identificador interno de grupo (@lid), nao um numero WhatsApp real. Mensagens diretas pra LIDs nao sao permitidas pelo WhatsApp. Acessa via grupo original ou pede o numero direto pro contato.",
-        isLid: true,
-        clean
-      });
-    }
+    // v4.34: marca @lid mas DEIXA TENTAR (as vezes WhatsApp aceita resposta direta)
+    // WhatsApp atual usa @lid pra contatos nao-salvos no celular - mais comum do que se imagina
+    const isLid = clean.length > 14;
 
     // v4.23: se Cloud API configurada, usa ela. Senao, Bravos (whatsapp-web.js).
     if (process.env.WA_CLOUD_TOKEN && process.env.WA_CLOUD_PHONE_ID) {
@@ -729,7 +723,8 @@ app.post("/api/send-message", async (req, res) => {
     }
 
     // Fallback Bravos
-    const chatId = clean.includes("@") ? clean : `${clean}@c.us`;
+    // v4.34: se @lid (>14 digitos), usa sufixo @lid; senao @c.us
+    const chatId = clean.includes("@") ? clean : `${clean}${isLid ? "@lid" : "@c.us"}`;
     const r = await fetch(`${BRAVOS_URL}/send-message`, {
       method: "POST",
       headers: {
