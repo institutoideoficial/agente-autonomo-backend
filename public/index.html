@@ -4426,6 +4426,26 @@ setTimeout(checkStatus,2000);
   }
   disableAllBots();
 
+  // v4.34: interceptor global - quando fetch retornar 401, redireciona pra /login
+  // (evita "auth required" como erro generico no meio da UI)
+  (function(){
+    var orig = window.fetch;
+    var redirected = false;
+    window.fetch = async function(input, init){
+      var resp = await orig.call(this, input, init);
+      if(resp.status === 401 && !redirected){
+        // Ignora 401 esperado em /auth/me e /auth/2fa/status (queries de status)
+        var url = typeof input === 'string' ? input : (input && input.url) || '';
+        if(!/\/auth\/(me|2fa\/status|users-count)/.test(url)){
+          redirected = true;
+          if(typeof toast === 'function') toast('Sessao expirada — redirecionando pra login...');
+          setTimeout(function(){ location.href = '/login?next=' + encodeURIComponent(location.pathname); }, 800);
+        }
+      }
+      return resp;
+    };
+  })();
+
   // v4.33 fix: migra convs antigas criadas sem real:true (criarConv pre-fix)
   // Toda conv com telefone valido (>=10 digitos) vira real
   function migrateConvsForBravos(){
