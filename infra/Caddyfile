@@ -49,6 +49,28 @@
     }
 }
 
+# Copywriter Agent
+{$DOMAIN_COPYWRITER} {
+    encode gzip
+    reverse_proxy copywriter-agent:8000
+
+    log {
+        output stdout
+        format console
+    }
+}
+
+# Video Cutter Agent
+{$DOMAIN_VIDEOCUTTER} {
+    encode gzip
+    reverse_proxy video-cutter-agent:8000
+
+    log {
+        output stdout
+        format console
+    }
+}
+
 # Painel QR do Bravos (opcional — so se DOMAIN_BRAVOS estiver setado)
 # Deixe linha abaixo comentada se nao usar subdominio separado
 # {$DOMAIN_BRAVOS} {

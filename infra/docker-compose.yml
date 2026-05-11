@@ -81,6 +81,8 @@ services:
       DOMAIN_CRM: ${DOMAIN_CRM}
       DOMAIN_SOFIA: ${DOMAIN_SOFIA:-sofia.institutoideoficial.com.br}
       DOMAIN_BRAVOS: ${DOMAIN_BRAVOS:-}
+      DOMAIN_COPYWRITER: ${DOMAIN_COPYWRITER:-copywriter.institutoideoficial.com.br}
+      DOMAIN_VIDEOCUTTER: ${DOMAIN_VIDEOCUTTER:-videocutter.institutoideoficial.com.br}
       ACME_EMAIL: ${ACME_EMAIL}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
